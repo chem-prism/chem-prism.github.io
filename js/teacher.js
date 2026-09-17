@@ -147,14 +147,19 @@ export function computeMetrics(convos) {
   const mcCount = {};
   done.forEach(c => { if (c.mc) mcCount[c.mc] = (mcCount[c.mc] || 0) + 1; });
 
-  // 知识点 × 表征层：每格 = 该知识点下该层「待通」的对话数 / 总对话数
+  // 「初始卡点」分布 —— 比结束状态有教学价值得多。
+  // 结束状态几乎总是三层全通（诊断报告写的是结论），用它做统计等于一片绿。
+  const stuckCount = { 宏观层: 0, 微观层: 0, 符号层: 0, 未定位: 0 };
+  done.forEach(c => { if (c.stuckAt) stuckCount[c.stuckAt] = (stuckCount[c.stuckAt] || 0) + 1; });
+
+  // 知识点 × 初始卡点层：每格 = 该知识点下「一开始卡在这一层」的对话数 / 总对话数
   const kpMap = new Map();
   done.forEach(c => {
     const kp = (c.knowledge || '未标注').replace(/[（(].*$/, '').trim().slice(0, 14);
-    if (!kpMap.has(kp)) kpMap.set(kp, { kp, n: 0, weak: { 宏观层: 0, 微观层: 0, 符号层: 0 }, mc: {} });
+    if (!kpMap.has(kp)) kpMap.set(kp, { kp, n: 0, stuck: { 宏观层: 0, 微观层: 0, 符号层: 0 }, mc: {} });
     const e = kpMap.get(kp);
     e.n++;
-    LAYER_KEYS.forEach(k => { if (k in c.layers && !c.layers[k]) e.weak[k]++; });
+    if (c.stuckAt && c.stuckAt in e.stuck) e.stuck[c.stuckAt]++;
     if (c.mc) e.mc[c.mc] = (e.mc[c.mc] || 0) + 1;
   });
 
@@ -167,18 +172,20 @@ export function computeMetrics(convos) {
       st[k] = known.length ? known.filter(c => c.layers[k]).length / known.length : null;
     });
     const mcs = d.map(c => c.mc).filter(Boolean);
+    const stucks = d.map(c => c.stuckAt).filter(x => x && x !== '未定位');
     return {
       sid, n: mine.length, complete: d.length,
       layers: st,
+      stuck: stucks.length ? mode(stucks) : null,
       avgRounds: mine.length ? mine.reduce((a, c) => a + c.rounds, 0) / mine.length : 0,
-      mc: mcs.length ? mode(mcs) : null,
+      mc: mcs.length ? +mode(mcs) : null,   // MC 编码需要数字，层名保持字符串
     };
   }).sort((a, b) => a.sid.localeCompare(b.sid));
 
   const rounds = convos.map(c => c.rounds).filter(r => r > 0);
   return {
     convos, done, students,
-    layerStat, mcCount, kpMap,
+    layerStat, mcCount, kpMap, stuckCount,
     nStudents: students.length,
     nConvos: convos.length,
     nComplete: done.length,
@@ -187,10 +194,11 @@ export function computeMetrics(convos) {
   };
 }
 
+/** 众数。返回原始值，不做类型转换——调用方按需转换（层名是字符串，MC 编码是数字）。 */
 function mode(arr) {
   const c = {};
   arr.forEach(v => c[v] = (c[v] || 0) + 1);
-  return +Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
+  return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 /* ============================================================
@@ -202,7 +210,7 @@ const pct = v => (v * 100).toFixed(0) + '%';
 
 const SECTIONS = [
   { id: 'sec-kpi', name: '总览' },
-  { id: 'sec-layer', name: '表征层次' },
+  { id: 'sec-layer', name: '初始卡点' },
   { id: 'sec-mc', name: '迷思概念' },
   { id: 'sec-heat', name: '学情热力图' },
   { id: 'sec-stu', name: '学生明细' },
@@ -245,7 +253,9 @@ export function render(m, opts = {}) {
     return [bg, r > 0.5 ? '#12161b' : 'var(--text)'];
   };
 
-  const weakLayer = LAYER_KEYS.reduce((a, b) => (m.layerStat[a].rate <= m.layerStat[b].rate ? a : b));
+  const stuckList = LAYER_KEYS.map(k => [k, m.stuckCount[k] || 0]);
+  const topStuck = stuckList.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const totalStuck = stuckList.reduce((s, e) => s + e[1], 0);
   const topMC = Object.entries(m.mcCount).sort((a, b) => b[1] - a[1]);
   const mcMax = topMC.length ? topMC[0][1] : 1;
 
@@ -262,25 +272,31 @@ export function render(m, opts = {}) {
       <div class="kpi"><div class="kpi-k">平均追问轮次</div>
         <div class="kpi-v">${m.avgRounds.toFixed(1)}<small>轮</small></div>
         <div class="kpi-sub">上限 3 轮 + 讲解 + 验证</div></div>
-      <div class="kpi"><div class="kpi-k">最薄弱表征层</div>
-        <div class="kpi-v" style="font-size:19px;color:var(--w-amber)">${weakLayer}</div>
-        <div class="kpi-sub">通过率 ${pct(m.layerStat[weakLayer].rate)}</div></div>
+      <div class="kpi"><div class="kpi-k">最高频初始卡点</div>
+        <div class="kpi-v" style="font-size:19px;color:var(--w-amber)">${topStuck[1] ? topStuck[0] : '—'}</div>
+        <div class="kpi-sub">${topStuck[1]} 次对话卡在这一层</div></div>
     </div>
     ${opts.isDemo ? '<div class="finding">当前显示的是<b>示例数据</b>，用于预览看板效果。导入真实会话记录后，所有图表会按实际数据重新计算。</div>' : ''}`));
 
-  /* ---------- 表征层次 ---------- */
+  /* ---------- 初始卡点分布 ---------- */
   const layerColor = { 宏观层: 'var(--w-amber)', 微观层: 'var(--w-teal)', 符号层: 'var(--w-indigo)' };
-  html.push(section('sec-layer', '三重表征通过率',
+  const unlocated = m.stuckCount['未定位'] || 0;
+  html.push(section('sec-layer', '初始卡点分布（学生一开始卡在哪一层）',
     `<div class="layers">${LAYER_KEYS.map(k => {
-      const s = m.layerStat[k];
+      const n = m.stuckCount[k] || 0;
+      const rate = totalStuck ? n / totalStuck : 0;
       return `<div class="layer-card">
-        <div class="layer-name"><span>${k}</span><span class="layer-pct" style="color:${layerColor[k]}">${pct(s.rate)}</span></div>
-        <div class="layer-bar"><i style="width:${s.rate * 100}%;background:${layerColor[k]}"></i></div>
-        <div class="layer-note">${s.pass} / ${s.total} 次对话中该层已通</div>
+        <div class="layer-name"><span>${k}</span>
+          <span class="layer-pct" style="color:${layerColor[k]}">${n}<small style="font-size:11px;color:var(--faint)"> 次</small></span></div>
+        <div class="layer-bar"><i style="width:${rate * 100}%;background:${layerColor[k]}"></i></div>
+        <div class="layer-note">占全部卡点的 ${(rate * 100).toFixed(0)}%</div>
       </div>`;
     }).join('')}</div>
-    <div class="finding">通过率最低的是 <b>${weakLayer}</b>。这说明学生的困难主要不在记不住结论，
-      而在<b>现象、粒子、符号三层之间的转换</b>——这正是课堂讲解最难覆盖、也最需要个别化追问的地方。</div>`));
+    ${unlocated ? `<div class="finding">另有 <b>${unlocated}</b> 次对话未能定位卡点层（对话过短或学生中途离开），未计入上方统计。</div>` : ''}
+    <div class="finding">这里统计的是<b>学生一开始卡住的那一层</b>，不是对话结束时的状态——
+      结束状态几乎总是三层全通，用它做统计看不出任何差异。<br>
+      卡点层次集中在哪里，课堂时间就该往哪里投。若「微观层」占比最高，说明学生会算但脑中无粒子图像，
+      补图像比再讲一遍公式有用。</div>`));
 
   /* ---------- 迷思概念 ---------- */
   html.push(section('sec-mc', '迷思概念排行（认知卡点分布）',
@@ -302,37 +318,38 @@ export function render(m, opts = {}) {
       <tbody>${kps.map(e => `<tr>
         <td class="kp" title="${esc(e.kp)}">${esc(e.kp)}</td>
         ${LAYER_KEYS.map(k => {
-          const r = e.n ? e.weak[k] / e.n : 0;
+          const r = e.n ? e.stuck[k] / e.n : 0;
           const [bg, fg] = heatColor(r);
-          return `<td><div class="cell" style="background:${bg};color:${fg}" title="${e.weak[k]}/${e.n} 次该层待通">${e.n && e.weak[k] ? pct(r) : '—'}</div></td>`;
+          return `<td><div class="cell" style="background:${bg};color:${fg}" title="${e.stuck[k]}/${e.n} 次卡在这一层">${e.n && e.stuck[k] ? pct(r) : '—'}</div></td>`;
         }).join('')}
         <td class="n">${e.n}</td>
       </tr>`).join('')}</tbody>
     </table>
-    <div class="legend"><span>通过</span><span class="legend-bar"></span><span>待通比例高</span>
-      <span style="margin-left:auto">格子内数字 = 该知识点下此层「待通」的对话占比</span></div>
-    <div class="finding">一眼能看出<b>哪个知识点的哪一层</b>最成问题。例如某知识点符号层通红、微观层发暗，
-      说明学生会算但不懂——讲课时就该补粒子图像，而不是再讲一遍公式。</div>`
+    <div class="legend"><span>没人卡</span><span class="legend-bar"></span><span>卡的人多</span>
+      <span style="margin-left:auto">格子内数字 = 该知识点下「一开始卡在这一层」的对话占比</span></div>
+    <div class="finding">一眼能看出<b>哪个知识点的哪一层</b>最成问题。例如某知识点符号层发亮、微观层很暗，
+      说明学生卡在「写不出式子」而非「不懂粒子」——讲评时就该练符号表达，而不是重讲微观机理。</div>`
     : '<p style="color:var(--dim)">暂无数据。需智能体在诊断结论中输出「涉及知识点」一行。</p>';
-  html.push(section('sec-heat', '知识点 × 表征层 热力图', heatBody));
+  html.push(section('sec-heat', '知识点 × 初始卡点层 热力图', heatBody));
 
   /* ---------- 学生明细 ---------- */
   html.push(section('sec-stu', '学生明细',
     `<table class="stu-table">
       <thead><tr><th>编号</th><th>对话</th><th>完整诊断</th><th>平均轮次</th>
-        <th>宏观层</th><th>微观层</th><th>符号层</th><th>主要卡点</th></tr></thead>
-      <tbody>${m.students.map(s => `<tr>
+        <th>初始卡点</th><th>主要卡点类型</th><th>结束状态</th></tr></thead>
+      <tbody>${m.students.map(s => {
+        const allPass = LAYER_KEYS.every(k => s.layers[k] == null || s.layers[k] >= 0.5);
+        return `<tr>
         <td class="stu-id">${s.sid}</td>
         <td>${s.n}</td><td>${s.complete}</td><td>${s.avgRounds.toFixed(1)}</td>
-        ${LAYER_KEYS.map(k => {
-          const v = s.layers[k];
-          if (v == null) return '<td><span class="pill">—</span></td>';
-          return `<td><span class="pill ${v >= 0.5 ? 'on' : 'off'}">${v >= 0.5 ? '已通' : '待通'}</span></td>`;
-        }).join('')}
+        <td>${s.stuck ? `<span class="pill off">${s.stuck}</span>` : '<span class="pill">—</span>'}</td>
         <td>${s.mc ? `<span class="pill mc">MC-${s.mc} ${esc(mcName(s.mc))}</span>` : '—'}</td>
-      </tr>`).join('')}</tbody>
+        <td><span class="pill ${allPass ? 'on' : 'off'}">${allPass ? '三层已通' : '仍有待通'}</span></td>
+      </tr>`;
+      }).join('')}</tbody>
     </table>
-    <div class="finding">学生以<b>匿名编号</b>呈现，导出数据中不含姓名。编号可对照教师自留的名单使用。</div>`));
+    <div class="finding">学生以<b>匿名编号</b>呈现，导出数据中不含姓名。编号可对照教师自留的名单使用。<br>
+      「初始卡点」是诊断结论，「结束状态」是对话结束时的结果——两者不矛盾，是同一段对话的两端。</div>`));
 
   /* ---------- 建议 ---------- */
   const advice = [];
@@ -341,10 +358,16 @@ export function render(m, opts = {}) {
   }
   const weakKp = kps.find(e => e.n >= 2);
   if (weakKp) {
-    const worst = LAYER_KEYS.reduce((a, b) => (weakKp.weak[a] / weakKp.n >= weakKp.weak[b] / weakKp.n ? a : b));
-    advice.push(`知识点「<b>${esc(weakKp.kp)}</b>」的<b>${worst}</b>问题最集中，讲评时建议从这一层切入。`);
+    const worst = LAYER_KEYS.reduce((a, b) => (weakKp.stuck[a] / weakKp.n >= weakKp.stuck[b] / weakKp.n ? a : b));
+    if (weakKp.stuck[worst] > 0) {
+      advice.push(`知识点「<b>${esc(weakKp.kp)}</b>」的<b>${worst}</b>卡点最集中，讲评时建议从这一层切入。`);
+    }
   }
-  advice.push(`班级整体最薄弱的是<b>${weakLayer}</b>，这与本智能体的诊断重点一致——建议把课堂时间更多放在「现象 → 粒子 → 符号」的转换训练上，而不是重复推导公式。`);
+  if (totalStuck) {
+    advice.push(`学生的卡点最集中在<b>${topStuck[0]}</b>（${topStuck[1]} 次，占 ${pct(topStuck[1] / totalStuck)}）。` +
+      `这说明困难主要不在记不住结论，而在<b>现象、粒子、符号三层之间的转换</b>——` +
+      `这正是课堂讲授最难覆盖、也最需要个别化追问的地方。`);
+  }
   if (m.avgRounds < 2) advice.push('平均追问轮次偏低，多数学生很快就答对了，可适当提高任务难度或增加变式题。');
   if (m.avgRounds > 3.5) advice.push('平均追问轮次偏高，说明多数学生需要完整讲解才能通过，建议课前先补充相关基础。');
   if (m.nConvos && m.nComplete / m.nConvos < 0.7) advice.push(`有 ${m.nConvos - m.nComplete} 次对话未完成诊断（学生中途退出），建议检查任务难度或提醒学生完成整个流程。`);
@@ -406,11 +429,25 @@ async function handleFile(file) {
     const convos = parseSheet(rows);
     if (!convos.length) throw new Error('表中没有可解析的会话记录。');
     setStatus(`已导入 ${convos.length} 条会话`, 'ok');
-    render(computeMetrics(convos));
+    safeRender(computeMetrics(convos));
   } catch (e) {
     console.error(e);
     setStatus('解析失败', 'bad');
     renderEmpty(`解析失败：${esc(e.message)}<br>请确认导入的是智雅后台导出的《历史会话详情》表格。`);
+  }
+}
+
+/** 渲染失败的兜底——宁可显示一段错误说明，也不要留一片白屏 */
+function safeRender(m, opts) {
+  try {
+    render(m, opts);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('main').innerHTML =
+      `<div class="empty"><h2>看板渲染出错</h2>
+       <p>${esc(e.message)}</p>
+       <p style="margin-top:10px;font-family:var(--mono);font-size:12px">${esc(String(e.stack || '').split('\n')[1] || '')}</p>
+       <p style="margin-top:14px"><button class="btn" onclick="location.reload()">重新加载</button></p></div>`;
   }
 }
 
@@ -458,7 +495,7 @@ function loadDemo() {
   }
   const convos = parseSheet(rows);
   setStatus('示例数据', 'ok');
-  render(computeMetrics(convos), { isDemo: true });
+  safeRender(computeMetrics(convos), { isDemo: true });
 }
 
 /* ============================================================
