@@ -1,0 +1,119 @@
+/* ============================================================
+   教师端看板 —— 复用 workbench.css 的设计变量与基础组件
+   ============================================================ */
+
+.import-status { font-size: 12px; color: var(--faint); margin-right: 4px; }
+.import-status.ok { color: var(--w-green); }
+.import-status.bad { color: var(--w-red); }
+
+/* ---------- 空状态 ---------- */
+.empty {
+  border: 1px dashed var(--edge);
+  border-radius: var(--r);
+  padding: 52px 24px;
+  text-align: center;
+  background: rgba(255,255,255,.012);
+  transition: border-color .2s var(--ease), background .2s var(--ease);
+}
+.empty.drag { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.empty-icon {
+  width: 44px; height: 44px; margin: 0 auto 16px; opacity: .5;
+  background: conic-gradient(from 210deg, #5c82d6, #2fb3a3, #6bbc57, #e8a33d, #e05a4f, #5c82d6);
+  clip-path: polygon(50% 4%, 97% 96%, 3% 96%);
+}
+.empty h2 { font-family: var(--serif); font-size: 17px; margin: 0 0 8px; font-weight: 700; }
+.empty p { color: var(--dim); font-size: 13px; margin: 0 auto; max-width: 52ch; line-height: 1.8; }
+.empty code {
+  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  background: var(--sunken); padding: 1px 6px; border-radius: 3px;
+}
+
+/* ---------- KPI ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin-bottom: 14px; }
+.kpi { background: var(--panel); padding: 13px 15px; }
+.kpi-k { font-size: 11.5px; color: var(--faint); margin-bottom: 3px; }
+.kpi-v { font-family: var(--mono); font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.kpi-v small { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 3px; }
+.kpi-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+/* ---------- 条形排行 ---------- */
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.bar-row { display: grid; grid-template-columns: 190px 1fr 46px; gap: 12px; align-items: center; font-size: 13px; }
+.bar-name { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-name b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 11.5px; margin-right: 6px; }
+.bar-track { height: 16px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width .6s var(--ease); }
+.bar-n { font-family: var(--mono); font-size: 12.5px; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- 三层通过率 ---------- */
+.layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.layer-card { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); padding: 13px 15px; }
+.layer-name { font-size: 12.5px; color: var(--dim); margin-bottom: 7px; display: flex; justify-content: space-between; align-items: baseline; }
+.layer-pct { font-family: var(--mono); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.layer-bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 9px; }
+.layer-bar i { display: block; height: 100%; border-radius: 2px; transition: width .6s var(--ease); }
+.layer-note { font-size: 11px; color: var(--faint); margin-top: 7px; }
+
+/* ---------- 热力图 ---------- */
+.heat { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: 12.5px; }
+.heat th {
+  font-weight: 500; color: var(--faint); font-size: 11.5px;
+  padding: 5px 8px; text-align: left; white-space: nowrap;
+}
+.heat th.col { text-align: center; }
+.heat td { padding: 0; }
+.heat .cell {
+  height: 30px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  border: 1px solid rgba(255,255,255,.05);
+}
+.heat .kp { color: var(--dim); padding-right: 10px; white-space: nowrap; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+.heat .n { font-family: var(--mono); font-size: 11px; color: var(--faint); text-align: center; }
+
+.legend { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 11.5px; color: var(--faint); }
+.legend-bar { width: 118px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #2a1d1d, #6d3a2c, #a8672f, #d99a3a, #6bbc57); }
+
+/* ---------- 学生列表 ---------- */
+.stu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.stu-table th {
+  text-align: left; font-weight: 500; color: var(--faint); font-size: 11.5px;
+  padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.stu-table td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.03); color: var(--dim); }
+.stu-table tr:hover td { background: rgba(255,255,255,.02); }
+.stu-id { font-family: var(--mono); color: var(--text); font-weight: 600; }
+.pill {
+  display: inline-block; padding: 1px 7px; border-radius: 9px;
+  font-size: 11px; font-family: var(--mono); border: 1px solid currentColor;
+}
+.pill.on { color: var(--w-green); }
+.pill.off { color: var(--w-red); }
+.pill.mc { color: var(--w-amber); }
+
+/* ---------- 建议 ---------- */
+.advice { display: flex; flex-direction: column; gap: 10px; }
+.advice-item {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 11px 14px; border-radius: var(--r);
+  background: var(--sunken); border-left: 2px solid var(--accent);
+  font-size: 13px; line-height: 1.7;
+}
+.advice-n {
+  font-family: var(--mono); font-size: 11px; color: var(--accent);
+  border: 1px solid currentColor; border-radius: 3px; padding: 0 5px; flex: none; margin-top: 3px;
+}
+
+/* ---------- 覆盖层 ---------- */
+.drag-overlay {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(10,14,18,.88); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; color: var(--accent); font-family: var(--serif); font-weight: 700;
+  border: 2px dashed var(--accent);
+}
+
+@media (max-width: 720px) {
+  .bar-row { grid-template-columns: 120px 1fr 40px; font-size: 12px; }
+  .layers { grid-template-columns: 1fr; }
+  .kpi-v { font-size: 20px; }
+}

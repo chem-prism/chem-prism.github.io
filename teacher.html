@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学情画像 · 化学三棱镜</title>
+<meta name="description" content="教师端学情画像看板：班级表征层次分布、迷思概念排行与教学建议。">
+<meta name="theme-color" content="#0a0e12">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16 3,30 29,2 29' fill='%235c82d6'/></svg>">
+<link rel="stylesheet" href="css/workbench.css">
+<link rel="stylesheet" href="css/teacher.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="head">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <span class="brand-name">化学三棱镜</span>
+        <span class="brand-sub">学情画像 · 教师端</span>
+      </div>
+    </div>
+    <div class="head-right">
+      <span class="import-status" id="import-status"></span>
+      <label class="btn" for="file-input">导入会话记录</label>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" hidden>
+      <button class="btn" id="btn-demo">查看示例数据</button>
+      <a class="btn" href="./">返回工作台</a>
+    </div>
+    <div class="spectrum"></div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="看板导航"></nav>
+
+  <main class="main" id="main"></main>
+
+</div>
+
+<noscript>
+  <p style="padding:24px;color:#dde5ec">本看板需要启用 JavaScript 才能运行。</p>
+</noscript>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script type="module" src="js/teacher.js"></script>
+</body>
+</html>
