@@ -58,6 +58,7 @@ export class Chart {
     this.series = [];
     this.bands = [];
     this.markers = [];
+    this.vranges = [];
     this.hover = null;
     this._onMove = this._onMove.bind(this);
     this._onLeave = () => { this.hover = null; this.draw(); };
@@ -72,6 +73,8 @@ export class Chart {
   setSeries(series) { this.series = series; return this; }
   setBands(bands) { this.bands = bands; return this; }
   setMarkers(markers) { this.markers = markers; return this; }
+  /** 竖直区间（x 轴方向），用于标出「还没探索过的区域」 */
+  setVRanges(rs) { this.vranges = rs || []; return this; }
 
   /* ---------- 坐标变换 ---------- */
   _plot() {
@@ -123,6 +126,26 @@ export class Chart {
     // 绘图区底色
     ctx.fillStyle = 'rgba(255,255,255,0.012)';
     ctx.fillRect(p.x, p.y, p.w, p.h);
+
+    /* --- 竖直区间（提示尚未探索的区域） --- */
+    this.vranges.forEach(r => {
+      const xa = this._px(Math.max(r.x0, this.xRange[0]));
+      const xb = this._px(Math.min(r.x1, this.xRange[1]));
+      if (xb <= xa) return;
+      ctx.fillStyle = resolveColor(r.color);
+      ctx.globalAlpha = r.alpha == null ? 0.1 : r.alpha;
+      ctx.fillRect(xa, p.y, xb - xa, p.h);
+      ctx.globalAlpha = 1;
+      if (r.label) {
+        ctx.font = '10px "PingFang SC", sans-serif';
+        ctx.fillStyle = resolveColor(r.color);
+        ctx.globalAlpha = 0.85;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(r.label, (xa + xb) / 2, p.y + p.h - 5);
+        ctx.globalAlpha = 1;
+      }
+    });
 
     /* --- 水平色带（指示剂变色范围等） --- */
     this.bands.forEach(b => {

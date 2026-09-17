@@ -82,6 +82,15 @@ export function mount(root, params = {}) {
       markers.push({ x: crossX, color: 'var(--w-red)', label: '结论反转点', dash: [3, 3] });
     }
 
+    // 若学生还没越过反转点，把未探索的那一段轻轻标出来——只提示「那边没试过」，
+    // 不说明那边会发生什么，探索仍由学生完成。
+    const lgI = Math.log10(state.cI);
+    chart.setVRanges(
+      (crossX > -9 && crossX < -1 && lgI > crossX)
+        ? [{ x0: -9, x1: crossX, color: 'var(--w-red)', alpha: 0.07, label: '← 这一段还没试过' }]
+        : []
+    );
+
     chart.setMarkers(markers);
     chart.setSeries([
       {
@@ -109,7 +118,8 @@ export function mount(root, params = {}) {
     let msg;
     if (iFirst) {
       msg = `此刻 I⁻ 先沉淀，符合「Ksp 小的先沉淀」。但请注意——` +
-        `<b>这只是在两种离子浓度相当时的结论。</b>把 c(I⁻) 继续调小试试。`;
+        `<b>这只是在两种离子浓度相当时的结论。</b>` +
+        `<br>把 c(I⁻) 的滑块一路拉到最左端试试：图上标出的那一段，你还没走过。`;
     } else {
       msg = `<b>结论反转了。</b>虽然 Ksp(AgI) 比 Ksp(AgCl) 小 7 个数量级，` +
         `但由于 I⁻ 太稀，让它沉淀反而需要更高的 Ag⁺ 浓度，所以 <b>Cl⁻ 先沉淀</b>。` +
