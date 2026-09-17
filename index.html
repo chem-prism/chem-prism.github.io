@@ -3,26 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>化学三棱镜</title>
-<style>
-  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-         font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-         background:#0f172a; color:#e2e8f0; }
-  .box { text-align:center; padding:40px; max-width:560px; }
-  h1 { font-size:28px; margin:0 0 8px; font-weight:600; letter-spacing:2px; }
-  .sub { color:#94a3b8; font-size:14px; margin-bottom:28px; }
-  .prism { width:64px; height:64px; margin:0 auto 24px;
-           background:conic-gradient(from 210deg,#60a5fa,#a78bfa,#f472b6,#fbbf24,#60a5fa);
-           clip-path:polygon(50% 0,100% 100%,0 100%); }
-  .note { color:#64748b; font-size:13px; line-height:1.8; }
-</style>
+<title>化学三棱镜 · 探究工作台</title>
+<meta name="description" content="分析化学三重表征探究工作台：滴定曲线、分布分数、沉淀平衡、EDTA 酸效应、精密度与准确度，五组可交互模拟器。">
+<meta name="theme-color" content="#0a0e12">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16 3,30 29,2 29' fill='%232fb3a3'/></svg>">
+<link rel="stylesheet" href="css/workbench.css">
 </head>
 <body>
-  <div class="box">
-    <div class="prism"></div>
-    <h1>化学三棱镜</h1>
-    <div class="sub">分析化学 · 三重表征探究导师</div>
-    <div class="note">本站点为教学智能体作品的部署位置，内容正在建设中。</div>
-  </div>
+
+<div class="app">
+
+  <header class="head">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <span class="brand-name">化学三棱镜</span>
+        <span class="brand-sub">探究工作台</span>
+      </div>
+    </div>
+    <div class="head-right">
+      <button class="btn" id="btn-reset" title="恢复到初始参数">重置参数</button>
+    </div>
+    <div class="spectrum"></div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="模拟器导航"></nav>
+
+  <main class="main" id="main"></main>
+
+</div>
+
+<noscript>
+  <p style="padding:24px;color:#dde5ec">本工作台需要启用 JavaScript 才能运行。</p>
+</noscript>
+
+<script type="module" src="js/app.js"></script>
 </body>
 </html>
