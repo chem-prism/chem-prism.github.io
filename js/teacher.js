@@ -29,6 +29,21 @@ export function parseConversation(text) {
   return messages;
 }
 
+/**
+ * 统计真正的「追问」条数。
+ * 排除三类智能体消息，它们不是追问：
+ *   · 空消息 —— 嵌入节点（工作台）留下的空气泡
+ *   · 讲解消息 —— 含「最后一步你来」或【完整结论】
+ *   · 总结消息 —— 含【本次探讨回顾】或【表征层次诊断】
+ */
+const NON_QUESTION = /【本次探讨回顾】|【表征层次诊断】|【完整结论】|最后一步你来/;
+function countRounds(agentTexts) {
+  return agentTexts.filter(t => {
+    const s = String(t).trim();
+    return s.length > 0 && !NON_QUESTION.test(s);
+  }).length;
+}
+
 const MC_NAMES = {
   1: '宏观—微观错位', 2: '微观图像缺失', 3: '符号—意义脱节',
   4: '热力学—动力学混淆', 5: '强度量—容量量混淆', 6: '条件—标准混淆',
@@ -53,10 +68,16 @@ export function extractDiagnosis(agentTexts) {
     return x[1].split(/[—–]{1,2}|[。；;]/)[0].replace(/[（(].*$/, '').trim() || null;
   };
   const mcRaw = joined.match(/MC[\s-]?(\d{1,2})/);
+  const LAYER_ALT = /(宏观层|微观层|符号层)/;
   const stuckRaw = pick(/卡在哪里\s*[：:]\s*([^\n·【]+)/);
-  const stuck = stuckRaw && /宏观层|微观层|符号层/.test(stuckRaw)
-    ? (stuckRaw.match(/宏观层|微观层|符号层/) || [])[0]
-    : stuckRaw;
+  // 提示词要求只写层名，但模型偶尔会写成句子。若一句话里出现多个层名，
+  // 取紧跟在「卡在」后面的那个——那才是真正卡住的一层。
+  let stuck = stuckRaw;
+  if (stuckRaw) {
+    const after = stuckRaw.match(new RegExp('卡在\\s*' + LAYER_ALT.source));
+    const m = after || stuckRaw.match(LAYER_ALT);
+    stuck = m ? m[1] : stuckRaw;
+  }
   return {
     hasDiagnosis: Object.keys(layers).length > 0,
     layers,
@@ -91,7 +112,7 @@ export function parseSheet(rows) {
       time: colTime >= 0 ? String(r[colTime] || '') : '',
       messages,
       agentTexts,
-      rounds: Math.max(0, agentTexts.length - 1),   // 末条是总结，不计入追问轮次
+      rounds: countRounds(agentTexts),
       ...extractDiagnosis(agentTexts),
     });
   }
