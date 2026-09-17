@@ -57,11 +57,55 @@ function buildNav(activeId) {
   );
 }
 
+/* ---------- 参数持久化 ----------
+ * 智雅的历史消息会反复重载 iframe（平台手册明确提到），若不保存，
+ * 学生滚动一下对话就会丢掉刚调好的参数。
+ *
+ * 难点在于区分两种情况：
+ *   · 重载        —— URL 参数没变，应恢复学生调过的设置
+ *   · 派新任务    —— URL 参数变了，应以 URL 为准
+ * 因此存档里一并记下「当时 URL 上的参数」，重载时比对即可分辨。
+ */
+const STORE = 'cp:params:';
+const optsKey = o => JSON.stringify(Object.entries(o || {}).sort());
+
+function readSaved(simId) {
+  try { return JSON.parse(localStorage.getItem(STORE + simId) || 'null'); } catch { return null; }
+}
+function saveParams(simId, urlOpts, opts) {
+  try {
+    localStorage.setItem(STORE + simId, JSON.stringify({ url: optsKey(urlOpts), opts }));
+  } catch { /* 隐私模式等，忽略 */ }
+}
+function clearSaved(simId) {
+  try { localStorage.removeItem(STORE + simId); } catch { /* 忽略 */ }
+}
+let currentUrlOpts = {};
+function persist() {
+  if (current && current.params) saveParams(currentMeta.id, currentUrlOpts, current.params());
+}
+
 /* ---------- 切换模拟器 ---------- */
 function navigate(id, opts, task) {
   const sim = byId(id);
   currentMeta = sim.meta;
   taskText = task !== undefined ? task : '';
+
+  const hasUrlOpts = opts && Object.keys(opts).length > 0;
+  const saved = readSaved(sim.meta.id);
+
+  if (!hasUrlOpts) {
+    // 无 URL 参数：直接用存档（学生自己在导航里切来切去的情况）
+    if (saved && saved.opts && Object.keys(saved.opts).length) opts = saved.opts;
+    currentUrlOpts = {};
+  } else if (saved && saved.opts && saved.url === optsKey(opts)) {
+    // 有 URL 参数且与存档记录的一致 —— 说明是同一次任务的 iframe 重载，恢复学生调过的值
+    opts = saved.opts;
+    currentUrlOpts = opts;
+  } else {
+    // URL 参数与存档不同 —— 是智能体派来的新任务，以 URL 为准
+    currentUrlOpts = opts;
+  }
 
   document.documentElement.style.setProperty('--accent', `var(${sim.meta.accent})`);
   clearColorCache();   // --accent 变了，缓存的色值必须失效
@@ -91,6 +135,7 @@ function navigate(id, opts, task) {
 
   main.append(buildRecordPanel());
   refreshRecord();     // 挂载时先填一次，否则记录区是空的
+  persist();           // 记录初始状态，使 iframe 重载时能判断该恢复还是该用新任务
 
   lastQuery = new URLSearchParams({ sim: sim.meta.id, ...(opts || {}) }).toString();
   const url = new URL(location.href);
@@ -172,12 +217,15 @@ function escapeHtml(s) {
 main.addEventListener('click', e => {
   if (e.target.id === 'rec-copy') copyRecord();
 });
-main.addEventListener('input', e => {
-  // 记录框自身的输入与滑块变动都要刷新记录
+main.addEventListener('input', () => {
+  persist();          // 参数变动即时存档，抵御 iframe 重载
   refreshRecord();
 });
-main.addEventListener('change', refreshRecord);
-btnReset.onclick = () => navigate(currentMeta.id, {}, taskText);
+main.addEventListener('change', () => { persist(); refreshRecord(); });
+btnReset.onclick = () => {
+  clearSaved(currentMeta.id);
+  navigate(currentMeta.id, {}, taskText);
+};
 
 /* ---------- 启动 ---------- */
 const { sim, task, opts } = readParams();
