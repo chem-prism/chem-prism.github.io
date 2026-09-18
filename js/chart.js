@@ -60,6 +60,7 @@ export class Chart {
     this.bands = [];
     this.markers = [];
     this.vranges = [];
+    this.labels = [];        // 数据坐标下的文字标注（峰位归属等）
     this.hover = null;
     this._onMove = this._onMove.bind(this);
     this._onLeave = () => { this.hover = null; this.draw(); };
@@ -76,6 +77,8 @@ export class Chart {
   setMarkers(markers) { this.markers = markers; return this; }
   /** 竖直区间（x 轴方向），用于标出「还没探索过的区域」 */
   setVRanges(rs) { this.vranges = rs || []; return this; }
+  /** 数据坐标下的文字标注：[{x, y, text, color, rotate}] */
+  setLabels(ls) { this.labels = ls || []; return this; }
 
   /* ---------- 坐标变换 ---------- */
   _plot() {
@@ -168,19 +171,24 @@ export class Chart {
     });
 
     /* --- 网格 --- */
-    const xStep = niceStep(this.xRange[1] - this.xRange[0], 6);
-    const yStep = niceStep(this.yRange[1] - this.yRange[0], 6);
+    // 坐标轴可能是递减的（红外谱图按惯例从 4000 到 400），
+    // 所以刻度循环要按 min/max 而不是按 range[0]/range[1]
+    const [xa, xb] = this.xRange, [ya, yb] = this.yRange;
+    const xLo = Math.min(xa, xb), xHi = Math.max(xa, xb);
+    const yLo = Math.min(ya, yb), yHi = Math.max(ya, yb);
+    const xStep = niceStep(xHi - xLo, 6);
+    const yStep = niceStep(yHi - yLo, 6);
 
     ctx.lineWidth = 1;
     ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
 
     ctx.strokeStyle = line;
     ctx.beginPath();
-    for (let v = Math.ceil(this.xRange[0] / xStep) * xStep; v <= this.xRange[1] + 1e-9; v += xStep) {
+    for (let v = Math.ceil(xLo / xStep) * xStep; v <= xHi + 1e-9; v += xStep) {
       const x = Math.round(this._px(v)) + 0.5;
       ctx.moveTo(x, p.y); ctx.lineTo(x, p.y + p.h);
     }
-    for (let v = Math.ceil(this.yRange[0] / yStep) * yStep; v <= this.yRange[1] + 1e-9; v += yStep) {
+    for (let v = Math.ceil(yLo / yStep) * yStep; v <= yHi + 1e-9; v += yStep) {
       const y = Math.round(this._py(v)) + 0.5;
       ctx.moveTo(p.x, y); ctx.lineTo(p.x + p.w, y);
     }
@@ -190,12 +198,12 @@ export class Chart {
     ctx.fillStyle = dim;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    for (let v = Math.ceil(this.xRange[0] / xStep) * xStep; v <= this.xRange[1] + 1e-9; v += xStep) {
+    for (let v = Math.ceil(xLo / xStep) * xStep; v <= xHi + 1e-9; v += xStep) {
       ctx.fillText(fmtTick(v, xStep), this._px(v), p.y + p.h + 6);
     }
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    for (let v = Math.ceil(this.yRange[0] / yStep) * yStep; v <= this.yRange[1] + 1e-9; v += yStep) {
+    for (let v = Math.ceil(yLo / yStep) * yStep; v <= yHi + 1e-9; v += yStep) {
       ctx.fillText(fmtTick(v, yStep), p.x - 8, this._py(v));
     }
 
@@ -278,6 +286,21 @@ export class Chart {
       ctx.setLineDash([]);
     });
     ctx.restore();
+
+    /* --- 数据坐标标注（峰位归属等） --- */
+    this.labels.forEach(l => {
+      const X = this._px(l.x), Y = this._py(l.y);
+      if (X < p.x - 40 || X > p.x + p.w + 40) return;
+      ctx.save();
+      ctx.font = l.font || '10px "PingFang SC", sans-serif';
+      ctx.fillStyle = resolveColor(l.color || '--dim');
+      ctx.textAlign = l.align || 'center';
+      ctx.textBaseline = l.baseline || 'bottom';
+      ctx.translate(X, Y);
+      if (l.rotate) ctx.rotate(l.rotate);
+      ctx.fillText(l.text, 0, 0);
+      ctx.restore();
+    });
 
     /* --- 悬停十字线 --- */
     if (this.hover != null) {

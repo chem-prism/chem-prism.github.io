@@ -482,3 +482,149 @@ export function qTest(values) {
     n,
   };
 }
+
+/* ============================================================
+ * 色谱分析法（教材 ch15）
+ * ============================================================ */
+
+/**
+ * 范第姆特方程：塔板高度 H 随线速度 u 的变化
+ *   H = A + B/u + C·u
+ * A 涡流扩散、B/u 分子扩散、C·u 传质阻力。
+ * H 对 u 存在极小值，对应最佳线速度 u_opt = √(B/C)。
+ */
+export function vanDeemter(u, A = 0.005, B = 0.05, C = 0.005) {
+  return A + B / u + C * u;
+}
+
+export const optimumVelocity = (B = 0.05, C = 0.005) => Math.sqrt(B / C);
+
+/**
+ * 色谱参数与峰形
+ *
+ * 由分配比 k、柱长 L、线速度 u 推出整套参数：
+ *   死时间   t_M = L/u
+ *   保留时间 t_R = t_M(1+k)
+ *   塔板数   N  = L/H
+ *   峰宽     W  = 4σ = 4t_R/√N      （高斯峰：N = (t_R/σ)²）
+ *   分离度   R  = 2(t_R2−t_R1)/(W1+W2)
+ *
+ * @param {object} o  k1, k2, L(cm), u(cm/s), A, B, C
+ */
+export function chromMetrics({ k1, k2, L, u, A = 0.005, B = 0.05, C = 0.005 }) {
+  const H = vanDeemter(u, A, B, C);
+  const N = L / H;
+  const tM = L / u;
+  const tR1 = tM * (1 + k1);
+  const tR2 = tM * (1 + k2);
+  const sig1 = tR1 / Math.sqrt(N);
+  const sig2 = tR2 / Math.sqrt(N);
+  const W1 = 4 * sig1, W2 = 4 * sig2;
+  const alpha = k1 > 0 ? k2 / k1 : Infinity;
+  const R = (W1 + W2) > 0 ? (2 * (tR2 - tR1)) / (W1 + W2) : 0;
+  return { H, N, tM, tR1, tR2, sig1, sig2, W1, W2, alpha, R };
+}
+
+/** 生成色谱图采样（两个高斯峰叠加） */
+export function chromatogram(metrics, { n = 400, tMax } = {}) {
+  const { tM, tR1, tR2, sig1, sig2 } = metrics;
+  const end = tMax != null ? tMax : tR2 + 6 * sig2;
+  const gauss = (t, mu, sg) => Math.exp(-((t - mu) ** 2) / (2 * sg * sg));
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = (end * i) / n;
+    out.push({ t, signal: gauss(t, tR1, sig1) + 0.85 * gauss(t, tR2, sig2) });
+  }
+  return { points: out, tEnd: end };
+}
+
+/** 分离度判据：R ≥ 1.5 视为完全分离 */
+export const resolutionVerdict = R =>
+  R >= 1.5 ? '完全分离' : R >= 1.0 ? '部分重叠' : '基本没分开';
+
+/* ============================================================
+ * 液液萃取（教材 ch10）
+ * ============================================================ */
+
+/**
+ * 一次萃取的萃取率
+ *   E = D·V有 / (D·V有 + V水)
+ */
+export function extractOnce(D, vOrg, vAq) {
+  return (D * vOrg) / (D * vOrg + vAq);
+}
+
+/**
+ * 多次萃取的累积萃取率
+ *   E总 = 1 − [V水 / (D·V有 + V水)]^n
+ *
+ * 关键结论：有机相总量相同时，分多次萃取优于一次性萃取——
+ * 因为每次都用新鲜有机相，维持最大的浓度梯度。
+ */
+export function extractTotal(D, vOrgEach, vAq, n) {
+  return 1 - Math.pow(vAq / (D * vOrgEach + vAq), n);
+}
+
+/* ============================================================
+ * 电位分析法（教材 ch12）
+ * ============================================================ */
+
+/**
+ * 电位滴定曲线 + 微分曲线
+ *
+ * 用能斯特方程描述：计量点前由待测电对控制，计量点后由滴定剂电对控制。
+ * 微分曲线 ΔE/ΔV 的峰顶即化学计量点——这是电位滴定定终点的标准方法，
+ * 因为 E–V 曲线在计量点附近变化平缓，肉眼难以精确定位。
+ *
+ * @param {object} o  e1, e2, n1, n2, cAnalyte, vAnalyte, cTitrant,
+ *                    slope（电极实际斜率 mV/pH，老化电极会低于理论 59.2）
+ */
+export function potentiometricCurve({ e1, e2, n1 = 1, n2 = 1, cAnalyte, vAnalyte, cTitrant, slope = 59.2, n = 240 }) {
+  const veq = (cAnalyte * vAnalyte) / cTitrant;
+  const vMax = veq * 1.6;
+  const F = slope / 1000;                 // mV → V，并允许斜率偏离理论值
+  const SPAN = 0.002;                     // 计量点过渡带（滴定分数）
+
+  // f→0 时 [Ox]/[Red]→0，电位趋于 −∞。教材曲线不画这一段，
+  // 这里把比值下限钳到 1e-4（与 redoxCurve 一致），避免起点成为人为的陡崖——
+  // 否则微分曲线会在 v≈0 处出现比计量点还高的假峰，终点定位整个错掉。
+  const branch = f => {
+    if (f <= 1) return e2 + (F / n2) * Math.log10(Math.max(f / Math.max(1 - f, 1e-12), 1e-4));
+    return e1 + (F / n1) * Math.log10(Math.max(f - 1, 1e-12));
+  };
+  const Eof = f => {
+    if (f <= 1 - SPAN || f >= 1 + SPAN) return branch(f);
+    const t = (f - (1 - SPAN)) / (2 * SPAN);
+    const lo = branch(1 - SPAN), hi = branch(1 + SPAN);
+    return lo + (hi - lo) * t;
+  };
+
+  // 采样：均匀点 + 计量点附近加密。计量点的跳变只有 0.4% 的滴定分数宽，
+  // 均匀采样会整段跳过，微分曲线就抓不到那个峰。
+  const vs = new Set();
+  for (let i = 0; i <= n; i++) vs.add((vMax * i) / n);
+  for (let i = -60; i <= 60; i++) {
+    const v = veq * (1 + (i / 60) * SPAN * 6);
+    if (v >= 0 && v <= vMax) vs.add(v);
+  }
+  const pts = [...vs].sort((a, b) => a - b).map(v => ({ v, E: Eof(v / veq) * 1000 }));
+
+  // 微分曲线：ΔE/ΔV，峰顶即计量点
+  const deriv = [];
+  for (let i = 1; i < pts.length; i++) {
+    const dv = pts[i].v - pts[i - 1].v;
+    if (dv <= 0) continue;
+    deriv.push({ v: (pts[i].v + pts[i - 1].v) / 2, d: (pts[i].E - pts[i - 1].E) / dv });
+  }
+  return { points: pts, deriv, veq };
+}
+
+/** 由微分曲线的峰顶定出终点体积 */
+export function endpointFromDerivative(deriv) {
+  let best = deriv[0];
+  for (const d of deriv) if (Math.abs(d.d) > Math.abs(best.d)) best = d;
+  return best ? best.v : null;
+}
+
+/** pH 电极的两点校正：斜率检查（mV/pH） */
+export const electrodeSlope = (E1, E2, ph1, ph2) => (E2 - E1) / (ph2 - ph1);
