@@ -88,6 +88,40 @@ export function extractDiagnosis(agentTexts) {
   };
 }
 
+/**
+ * 抽取批改技能输出的结构化块。
+ *
+ * 批改类技能（作业批改 / 实验报告批改）在班级汇总之后会输出：
+ *   【批改数据】
+ *   张三｜作业｜分步沉淀规律｜符号层｜MC-7｜错
+ * 一行一名学生。这段是给程序读的，与诊断对话产出的是同一张画像的不同来源。
+ */
+const GRADING_MARK = '【批改数据】';
+export function parseGradingBlock(text) {
+  const i = String(text).indexOf(GRADING_MARK);
+  if (i < 0) return null;
+  const out = [];
+  for (const raw of String(text).slice(i + GRADING_MARK.length).split('\n')) {
+    const t = raw.trim();
+    if (!t) continue;
+    if (t.startsWith('【')) break;                       // 到下一个块为止
+    const parts = t.split(/[｜|]/).map(s => s.trim());
+    if (parts.length < 3) continue;
+    const [student, source, topic, layer, mc, result] = parts;
+    if (!student || /^[-—\s]*$/.test(student)) continue;  // 跳过分隔行
+    const mcNum = (mc || '').match(/MC[\s-]?(\d{1,2})/);
+    out.push({
+      student,
+      source: source || '作业',
+      topic: topic || '未标注',
+      layer: layer && /层/.test(layer) ? layer : null,
+      mc: mcNum ? parseInt(mcNum[1], 10) : null,
+      result: result || '',
+    });
+  }
+  return out.length ? out : null;
+}
+
 /** 从 SheetJS 读出的二维数组中定位列并解析全部会话 */
 export function parseSheet(rows) {
   const headerIdx = rows.findIndex(r => r && r.some(c => String(c || '').includes('会话详情')));
@@ -107,12 +141,20 @@ export function parseSheet(rows) {
     const students = [...new Set(messages
       .map(x => x.speaker)
       .filter(s => !s.includes('智能体') && !s.includes('客户') && !s.includes('系统')))];
+    // 批改类会话：正文里带【批改数据】块。这类会话的「访客」是教师，不是学生，
+    // 真正的主体是块里那一行行学生，所以单独抽出来、不要把教师当学生统计。
+    const gradings = agentTexts
+      .map(parseGradingBlock)
+      .find(Boolean) || null;
+
     out.push({
       rawVisitor: colVisitor >= 0 ? String(r[colVisitor] || '') : '',
       student: students[0] || '（未识别）',
       time: colTime >= 0 ? String(r[colTime] || '') : '',
       messages,
       agentTexts,
+      gradings,
+      isGrading: Boolean(gradings),
       rounds: countRounds(agentTexts),
       ...extractDiagnosis(agentTexts),
     });
@@ -129,12 +171,24 @@ const LAYER_KEYS = ['宏观层', '微观层', '符号层'];
 export function computeMetrics(convos) {
   const anon = new Map();
   let seq = 0;
+  const anonId = name => {
+    if (!anon.has(name)) anon.set(name, 'S' + String(++seq).padStart(2, '0'));
+    return anon.get(name);
+  };
+
+  // 批改类会话的「访客」是教师。若把它当学生统计，教师会混进学生名单里——
+  // 真正的主体是【批改数据】块里那一行行学生。
+  const dialogConvos = convos.filter(c => !c.isGrading);
+  dialogConvos.forEach(c => { c.sid = anonId(c.student); });
+
+  // 把批改块里的每一行抽成独立记录，并匿名化
+  const gradings = [];
   convos.forEach(c => {
-    if (!anon.has(c.student)) anon.set(c.student, 'S' + String(++seq).padStart(2, '0'));
-    c.sid = anon.get(c.student);
+    if (!c.gradings) return;
+    c.gradings.forEach(g => gradings.push({ ...g, sid: anonId(g.student) }));
   });
 
-  const done = convos.filter(c => c.hasDiagnosis);
+  const done = dialogConvos.filter(c => c.hasDiagnosis);
   const layerStat = {};
   LAYER_KEYS.forEach(k => {
     const known = done.filter(c => k in c.layers);
@@ -145,37 +199,50 @@ export function computeMetrics(convos) {
     };
   });
 
+  // —— 以下四组统计都同时吃两类数据：诊断对话 + 批改记录 ——
+
   const mcCount = {};
   done.forEach(c => { if (c.mc) mcCount[c.mc] = (mcCount[c.mc] || 0) + 1; });
+  gradings.forEach(g => { if (g.mc) mcCount[g.mc] = (mcCount[g.mc] || 0) + 1; });
 
   // 「初始卡点」分布 —— 比结束状态有教学价值得多。
   // 结束状态几乎总是三层全通（诊断报告写的是结论），用它做统计等于一片绿。
   const stuckCount = { 宏观层: 0, 微观层: 0, 符号层: 0, 未定位: 0 };
   done.forEach(c => { if (c.stuckAt) stuckCount[c.stuckAt] = (stuckCount[c.stuckAt] || 0) + 1; });
+  gradings.forEach(g => {
+    const k = g.layer && g.layer in stuckCount ? g.layer : '未定位';
+    stuckCount[k]++;
+  });
 
-  // 知识点 × 初始卡点层：每格 = 该知识点下「一开始卡在这一层」的对话数 / 总对话数
+  // 知识点 × 卡点层
   const kpMap = new Map();
-  done.forEach(c => {
-    const kp = (c.knowledge || '未标注').replace(/[（(].*$/, '').trim().slice(0, 14);
+  const addKp = (kpRaw, layer, mc) => {
+    const kp = String(kpRaw || '未标注').replace(/[（(].*$/, '').trim().slice(0, 14) || '未标注';
     if (!kpMap.has(kp)) kpMap.set(kp, { kp, n: 0, stuck: { 宏观层: 0, 微观层: 0, 符号层: 0 }, mc: {} });
     const e = kpMap.get(kp);
     e.n++;
-    if (c.stuckAt && c.stuckAt in e.stuck) e.stuck[c.stuckAt]++;
-    if (c.mc) e.mc[c.mc] = (e.mc[c.mc] || 0) + 1;
-  });
+    if (layer && layer in e.stuck) e.stuck[layer]++;
+    if (mc) e.mc[mc] = (e.mc[mc] || 0) + 1;
+  };
+  done.forEach(c => addKp(c.knowledge, c.stuckAt, c.mc));
+  gradings.forEach(g => addKp(g.topic, g.layer, g.mc));
 
-  const students = [...new Set(convos.map(c => c.sid))].map(sid => {
-    const mine = convos.filter(c => c.sid === sid);
+  // 学生明细：诊断对话与批改记录都算这个学生的学习痕迹
+  const allSids = new Set([...dialogConvos.map(c => c.sid), ...gradings.map(g => g.sid)]);
+  const students = [...allSids].map(sid => {
+    const mine = dialogConvos.filter(c => c.sid === sid);
     const d = mine.filter(c => c.hasDiagnosis);
+    const gs = gradings.filter(g => g.sid === sid);
     const st = {};
     LAYER_KEYS.forEach(k => {
       const known = d.filter(c => k in c.layers);
       st[k] = known.length ? known.filter(c => c.layers[k]).length / known.length : null;
     });
-    const mcs = d.map(c => c.mc).filter(Boolean);
-    const stucks = d.map(c => c.stuckAt).filter(x => x && x !== '未定位');
+    const mcs = [...d.map(c => c.mc), ...gs.map(g => g.mc)].filter(Boolean);
+    const stucks = [...d.map(c => c.stuckAt), ...gs.map(g => g.layer)]
+      .filter(x => x && x !== '未定位');
     return {
-      sid, n: mine.length, complete: d.length,
+      sid, n: mine.length, complete: d.length, graded: gs.length,
       layers: st,
       stuck: stucks.length ? mode(stucks) : null,
       avgRounds: mine.length ? mine.reduce((a, c) => a + c.rounds, 0) / mine.length : 0,
@@ -183,12 +250,14 @@ export function computeMetrics(convos) {
     };
   }).sort((a, b) => a.sid.localeCompare(b.sid));
 
-  const rounds = convos.map(c => c.rounds).filter(r => r > 0);
+  const rounds = dialogConvos.map(c => c.rounds).filter(r => r > 0);
   return {
-    convos, done, students,
+    convos, done, students, gradings,
     layerStat, mcCount, kpMap, stuckCount,
     nStudents: students.length,
-    nConvos: convos.length,
+    nConvos: dialogConvos.length,
+    nGradings: gradings.length,
+    nGradingSessions: convos.filter(c => c.isGrading).length,
     nComplete: done.length,
     avgRounds: rounds.length ? rounds.reduce((a, b) => a + b, 0) / rounds.length : 0,
     selfSolved: done.filter(c => c.rounds <= 3 && LAYER_KEYS.every(k => c.layers[k] !== false)).length,
@@ -265,18 +334,20 @@ export function render(m, opts = {}) {
   /* ---------- 总览 ---------- */
   html.push(section('sec-kpi', '总览',
     `<div class="kpis">
-      <div class="kpi"><div class="kpi-k">参与学生</div><div class="kpi-v">${m.nStudents}<small>人</small></div></div>
-      <div class="kpi"><div class="kpi-k">对话总数</div><div class="kpi-v">${m.nConvos}<small>次</small></div>
+      <div class="kpi"><div class="kpi-k">参与学生</div><div class="kpi-v">${m.nStudents}<small>人</small></div>
+        <div class="kpi-sub">含批改记录中的学生</div></div>
+      <div class="kpi"><div class="kpi-k">诊断对话</div><div class="kpi-v">${m.nConvos}<small>次</small></div>
         <div class="kpi-sub">完成诊断 ${m.nComplete} 次</div></div>
-      <div class="kpi"><div class="kpi-k">人均对话</div>
-        <div class="kpi-v">${m.nStudents ? (m.nConvos / m.nStudents).toFixed(1) : '—'}<small>次</small></div></div>
+      <div class="kpi"><div class="kpi-k">批改记录</div><div class="kpi-v">${m.nGradings}<small>条</small></div>
+        <div class="kpi-sub">${m.nGradingSessions ? `来自 ${m.nGradingSessions} 次批改` : '尚未导入批改数据'}</div></div>
       <div class="kpi"><div class="kpi-k">平均追问轮次</div>
         <div class="kpi-v">${m.avgRounds.toFixed(1)}<small>轮</small></div>
         <div class="kpi-sub">上限 3 轮 + 讲解 + 验证</div></div>
-      <div class="kpi"><div class="kpi-k">最高频初始卡点</div>
+      <div class="kpi"><div class="kpi-k">最高频卡点层次</div>
         <div class="kpi-v" style="font-size:19px;color:var(--w-amber)">${topStuck[1] ? topStuck[0] : '—'}</div>
-        <div class="kpi-sub">${topStuck[1]} 次对话卡在这一层</div></div>
+        <div class="kpi-sub">${topStuck[1]} 次记录卡在这一层</div></div>
     </div>
+    ${m.nGradings ? '<div class="finding">下方统计<b>同时包含诊断对话与批改记录</b>——两类数据来自同一条教学链路，本就是同一批学生的两种表现。</div>' : ''}
     ${opts.isDemo ? '<div class="finding">当前显示的是<b>示例数据</b>，用于预览看板效果。导入真实会话记录后，所有图表会按实际数据重新计算。</div>' : ''}`));
 
   /* ---------- 初始卡点分布 ---------- */
@@ -336,13 +407,14 @@ export function render(m, opts = {}) {
   /* ---------- 学生明细 ---------- */
   html.push(section('sec-stu', '学生明细',
     `<table class="stu-table">
-      <thead><tr><th>编号</th><th>对话</th><th>完整诊断</th><th>平均轮次</th>
-        <th>初始卡点</th><th>主要卡点类型</th><th>结束状态</th></tr></thead>
+      <thead><tr><th>编号</th><th>对话</th><th>批改</th><th>完整诊断</th><th>平均轮次</th>
+        <th>卡点层</th><th>主要卡点类型</th><th>结束状态</th></tr></thead>
       <tbody>${m.students.map(s => {
-        const allPass = LAYER_KEYS.every(k => s.layers[k] == null || s.layers[k] >= 0.5);
+        const allPass = s.layers != null && LAYER_KEYS.every(k => s.layers[k] == null || s.layers[k] >= 0.5);
         return `<tr>
         <td class="stu-id">${s.sid}</td>
-        <td>${s.n}</td><td>${s.complete}</td><td>${s.avgRounds.toFixed(1)}</td>
+        <td>${s.n}</td><td>${s.graded || '—'}</td><td>${s.complete}</td>
+        <td>${s.n ? s.avgRounds.toFixed(1) : '—'}</td>
         <td>${s.stuck ? `<span class="pill off">${s.stuck}</span>` : '<span class="pill">—</span>'}</td>
         <td>${s.mc ? `<span class="pill mc">MC-${s.mc} ${esc(mcName(s.mc))}</span>` : '—'}</td>
         <td><span class="pill ${allPass ? 'on' : 'off'}">${allPass ? '三层已通' : '仍有待通'}</span></td>
@@ -488,12 +560,27 @@ function syntheticConvo(i) {
   return lines;
 }
 
+/** 示例用的批改会话 —— 让看板演示能展示"诊断 + 批改"两类数据合并后的效果 */
+function syntheticGrading() {
+  const names = ['孙毅飞', '李同学', '王同学', '张同学', '刘同学', '陈同学', '杨同学', '赵同学'];
+  const kps = ['分步沉淀规律', '溶度积与溶解度', '缓冲溶液原理', '条件稳定常数', '有效数字', '酸碱指示剂选择'];
+  const layers = ['微观层', '符号层', '宏观层'];
+  const mcs = [7, 1, 3, 2, 10, 5];
+  const lines = ['2026-09-18 15:00:00 李老师：帮我批改这次收上来的作业'];
+  const data = names.map((n, i) =>
+    `${n}｜作业｜${kps[i % kps.length]}｜${layers[i % layers.length]}｜MC-${mcs[i % mcs.length]}｜${i % 5 === 0 ? '对' : '错'}`);
+  lines.push('2026-09-18 15:06:00 智能体：【班级学情分析】共 8 份\n\n各题错误率…\n\n【批改数据】\n' + data.join('\n'));
+  return lines;
+}
+
 function loadDemo() {
   const rows = [['会话ID', '访客', '智能体', '来源', '会话创建时间', '会话详情']];
   for (let i = 0; i < 26; i++) {
     rows.push(['id' + i, ['孙毅飞', '李同学', '王同学'][i % 3], 'bot', 'PC端', '2026-09-17 10:00:00',
       syntheticConvo(i).join('\n')]);
   }
+  // 再加一条批改会话，演示两类数据合并
+  rows.push(['grade-1', '李老师', 'bot', 'PC端', '2026-09-18 15:00:00', syntheticGrading().join('\n')]);
   const convos = parseSheet(rows);
   setStatus('示例数据', 'ok');
   safeRender(computeMetrics(convos), { isDemo: true });
