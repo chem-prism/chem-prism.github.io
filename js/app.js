@@ -14,8 +14,17 @@ import * as distribution from './sims/distribution.js';
 import * as precipitate from './sims/precipitate.js';
 import * as edta from './sims/edta.js';
 import * as precision from './sims/precision.js';
+import * as redox from './sims/redox.js';
+import * as spectrophotometry from './sims/spectrophotometry.js';
+import * as complexometry from './sims/complexometry.js';
+import * as propagation from './sims/propagation.js';
 
-const SIMS = [titration, distribution, precipitate, edta, precision];
+// 顺序 = 左栏显示顺序。前五个是核心（被 tripet-diagnosis 技能直接引用），
+// 后四个是 2026-09 扩充的，覆盖四大滴定中的氧化还原与配位，加上光度法与误差。
+const SIMS = [
+  titration, distribution, precipitate, edta, precision,
+  redox, complexometry, spectrophotometry, propagation,
+];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
 
 const rail = document.getElementById('rail');

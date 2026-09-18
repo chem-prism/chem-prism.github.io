@@ -217,6 +217,216 @@ export function minPHfor(metal, cMetal) {
 }
 
 /* ============================================================
+ * 氧化还原滴定
+ * ============================================================ */
+
+/**
+ * 氧化还原滴定曲线
+ *
+ * 滴定剂 Ox₁ 滴定待测还原剂 Red₂。三段式（教材标准处理）：
+ *   计量点前：由待测物电对控制   E = E₂°′ + (0.0592/n₂)·lg(Ox₂/Red₂)
+ *   计量点：                   E = (n₁E₁°′ + n₂E₂°′)/(n₁+n₂)
+ *   计量点后：由滴定剂电对控制   E = E₁°′ + (0.0592/n₁)·lg(Ox₁/Red₁)
+ *
+ * @param {object} o
+ *   o.e1 滴定剂电对的条件电位 V
+ *   o.e2 待测物电对的条件电位 V
+ *   o.n1 滴定剂电对的电子数
+ *   o.n2 待测物电对的电子数
+ *   o.cAnalyte 待测物浓度 mol/L
+ *   o.vAnalyte 待测物体积 mL
+ *   o.cTitrant 滴定剂浓度 mol/L
+ */
+export function redoxCurve({ e1, e2, n1 = 1, n2 = 1, cAnalyte, vAnalyte, cTitrant, n = 300 }) {
+  const veq = (cAnalyte * vAnalyte) / cTitrant;
+  const vMax = veq * 2;
+  const F = 0.0592;
+  const SPAN = 0.005;                        // 计量点两侧的过渡带宽（滴定分数）
+
+  // 两支曲线（各自在远离计量点处成立）
+  // f→0 时 [Ox]/[Red]→0，电位理论上趋于 −∞。教材的曲线也不画这一段，
+  // 这里把比值下限钳到 1e-4（约 4 个 pH 单位），起点落在物理合理的区间。
+  const branch = f => {
+    if (f <= 1) return e2 + (F / n2) * Math.log10(Math.max(f / Math.max(1 - f, 1e-12), 1e-4));
+    return e1 + (F / n1) * Math.log10(Math.max(f - 1, 1e-12));
+  };
+
+  const Eof = f => {
+    if (f <= 1 - SPAN) return branch(f);
+    if (f >= 1 + SPAN) return branch(f);
+    // 过渡带内线性衔接。这样 ΔE° 很小、两支曲线本会交叉时，
+    // 曲线仍然单调——那种情形本来就没有可用突跃，不该画出跳变。
+    const t = (f - (1 - SPAN)) / (2 * SPAN);
+    const lo = branch(1 - SPAN), hi = branch(1 + SPAN);
+    return lo + (hi - lo) * t;
+  };
+
+  // 采样：均匀点 + 计量点附近的加密点（过渡带很窄，均匀采样会漏掉）
+  const vs = new Set();
+  for (let i = 0; i <= n; i++) vs.add((vMax * i) / n);
+  for (let i = -40; i <= 40; i++) {
+    const v = veq * (1 + (i / 40) * SPAN * 4);
+    if (v >= 0 && v <= vMax) vs.add(v);
+  }
+  const points = [...vs].sort((a, b) => a - b)
+    .map(v => ({ v, E: Eof(v / veq) * 1000 }));   // 转成 mV，便于作图
+
+  return { points, veq };
+}
+
+/** 计量点电位 */
+export const redoxEquivalence = (e1, e2, n1 = 1, n2 = 1) =>
+  (n1 * e1 + n2 * e2) / (n1 + n2);
+
+/**
+ * 突跃范围：计量点前后各 0.1% 之间的电位区间（mV）
+ * 判据：ΔE°′ ≥ 0.35~0.40 V 才能定量滴定
+ */
+export function redoxJump({ e1, e2, n1 = 1, n2 = 1 }) {
+  const F = 0.0592;
+  const lo = e2 + (F / n2) * Math.log10(0.999 / 0.001);
+  const hi = e1 + (F / n1) * Math.log10(0.001);
+  // ΔE° 太小时两支曲线会交叉，宽度算出来是负数。
+  // 这不是算错，而是「本就没有可用突跃」——钳到 0，并如实报告。
+  const width = (hi - lo) * 1000;
+  return {
+    lo: lo * 1000, hi: hi * 1000,
+    width: Math.max(0, width),
+    hasJump: width > 0,
+  };
+}
+
+/** 能否用于定量滴定 */
+export const canTitrateRedox = (e1, e2) => (e1 - e2) >= 0.35;
+
+/* ============================================================
+ * 分光光度法
+ * ============================================================ */
+
+/**
+ * 朗伯-比尔定律的实测吸光度（含偏离）
+ *
+ * 稀溶液下 A = εbc 成立；浓度升高后由于分子间相互作用、折射率变化、
+ * 以及解离缔合等化学因素，A–c 曲线会向浓度轴弯曲。
+ * 这里用一个经验式模拟负偏离：A = εbc·(1 − k·c)
+ *
+ * @param {number} eps 摩尔吸光系数 L·mol⁻¹·cm⁻¹
+ * @param {number} b   光程 cm
+ * @param {number} c   浓度 mol/L
+ * @param {number} k   偏离系数，0 = 完全符合比尔定律
+ */
+export function absorbance(eps, b, c, k = 0) {
+  const ideal = eps * b * c;
+  return Math.max(0, ideal * (1 - k * c));
+}
+
+/** 生成 A–c 标准曲线 */
+export function calibrationCurve({ eps, b, cMax, k = 0, n = 120 }) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const c = (cMax * i) / n;
+    out.push({ c, A: absorbance(eps, b, c, k) });
+  }
+  return out;
+}
+
+/** 由吸光度反算浓度（学生实际做的工作） */
+export const concFromAbs = (A, eps, b) => A / (eps * b);
+
+/* ============================================================
+ * 配位滴定
+ * ============================================================ */
+
+/**
+ * 配位滴定曲线：pM 随 EDTA 加入量的变化
+ *
+ * 按 M + Y ⇌ MY 的精确解求 [M]：
+ *   设 [MY] = y，则 [M] = C_M − y，[Y] = C_Y − y
+ *   K′(C_M − y)(C_Y − y) = y
+ *   整理成 K′y² − (K′(C_M+C_Y)+1)y + K′C_M C_Y = 0，取小根
+ *
+ * @param {object} o
+ *   o.lgK  条件稳定常数 lgK′
+ *   o.cMetal 金属离子浓度、o.vMetal 体积
+ *   o.cEDTA EDTA 浓度
+ */
+export function complexCurve({ lgK, cMetal, vMetal, cEDTA, n = 300 }) {
+  const K = Math.pow(10, lgK);
+  const veq = (cMetal * vMetal) / cEDTA;
+  const vMax = veq * 2;
+  const points = [];
+
+  for (let i = 0; i <= n; i++) {
+    const v = (vMax * i) / n;
+    const vt = vMetal + v;
+    const CM = (cMetal * vMetal) / vt;
+    const CY = (cEDTA * v) / vt;
+
+    let pM;
+    if (CY === 0) {
+      pM = CM > 0 ? -Math.log10(CM) : 14;
+    } else {
+      const a = K, bb = -(K * (CM + CY) + 1), cc = K * CM * CY;
+      const disc = Math.max(bb * bb - 4 * a * cc, 0);
+      const y = (-bb - Math.sqrt(disc)) / (2 * a);   // 取小根
+      const freeM = Math.max(CM - y, 1e-14);
+      pM = -Math.log10(freeM);
+    }
+    points.push({ v, pM });
+  }
+  return { points, veq };
+}
+
+/** 配位滴定可行性的最低 lgK′（按 lg(c·K′) ≥ 6） */
+export const minLgKforTitration = cMetal => 6 - Math.log10(cMetal);
+
+/* ============================================================
+ * 误差传递
+ * ============================================================ */
+
+/**
+ * 随机误差的传递
+ *
+ * 教材规则：加减法用绝对误差，乘除法用相对误差。
+ * 这是分析化学里最常被搞错的一条——常见错误是不论什么运算
+ * 都把绝对误差直接相加。
+ *
+ * @param {object} o
+ *   o.a, o.da 第一个量的值与其绝对误差
+ *   o.b, o.db 第二个量
+ *   o.op '+' | '-' | '×' | '÷'
+ */
+export function propagate({ a, da, b, db, op }) {
+  let value, rule, correct, naive;
+
+  const sumAbs = da + db;                        // 常见错误做法
+
+  if (op === '+' || op === '-') {
+    value = op === '+' ? a + b : a - b;
+    rule = '加减法 → 绝对误差传递';
+    correct = Math.sqrt(da * da + db * db);      // 方和根
+    naive = sumAbs;                              // 直接相加（保守，不算错，只是偏大）
+  } else if (op === '×' || op === '÷') {
+    value = op === '×' ? a * b : a / b;
+    rule = '乘除法 → 相对误差传递';
+    const ra = da / Math.abs(a), rb = db / Math.abs(b);
+    correct = Math.abs(value) * Math.sqrt(ra * ra + rb * rb);
+    naive = sumAbs;                              // ← 这才是真正的错误：拿绝对误差相加
+  } else {
+    throw new Error('未知的运算符：' + op);
+  }
+
+  return {
+    value, rule, correct, naive,
+    correctRel: Math.abs(correct / value),
+    naiveRel: Math.abs(naive / value),
+    // 用错规则会把误差算成正确值的几成。multiplication 时通常 << 1（严重低估），
+    // addition 时 ≈ 1（影响不大）——这本身就是个值得讲的对比。
+    ratioToCorrect: correct > 0 ? naive / correct : Infinity,
+  };
+}
+
+/* ============================================================
  * 统计
  * ============================================================ */
 
