@@ -352,3 +352,35 @@ textarea { resize: vertical; min-height: 62px; line-height: 1.6; font-family: va
   .readouts { grid-template-columns: repeat(2, 1fr); }
   .target-canvas { width: 100%; height: auto; aspect-ratio: 1; }
 }
+
+/* ---------- 实验台视图（宏观 + 微观） ---------- */
+.bench {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) 1fr;
+  gap: 12px;
+}
+.bench-cell {
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.bench-cell > canvas { width: 100%; flex: 1; min-height: 0; cursor: default; }
+.bench-tag {
+  font-size: 10px; letter-spacing: .14em; color: var(--faint);
+  padding: 6px 10px 0; text-transform: uppercase;
+}
+.bench-tag b { color: var(--dim); font-weight: 600; letter-spacing: 0; }
+.bench-beaker { height: 250px; }
+.bench-particles { height: 250px; }
+/* 只有一个粒子场时，别让它横铺一整行——粒子会稀得看不出密度 */
+.bench.single { grid-template-columns: minmax(240px, 420px); }
+.bench.single .bench-particles { height: 200px; }
+
+@media (max-width: 720px) {
+  .bench { grid-template-columns: 1fr; }
+  .bench-beaker { height: 200px; }
+  .bench-particles { height: 190px; }
+}

@@ -24,6 +24,7 @@ function resolveColor(c) {
   return out;
 }
 export function clearColorCache() { _colorCache.clear(); }
+export { resolveColor };
 
 function niceStep(range, targetTicks) {
   const raw = range / targetTicks;

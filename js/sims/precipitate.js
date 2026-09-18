@@ -12,6 +12,7 @@
 
 import { solubility, requiredTitrant } from '../chem.js';
 import { Chart, sample } from '../chart.js';
+import { ParticleField } from '../views.js';
 import { h, panel, readouts, slider, finding, sig } from './common.js';
 
 export const meta = {
@@ -40,6 +41,13 @@ export function mount(root, params = {}) {
   });
   chart.xFormat = v => v.toFixed(1);
 
+  // 微观层：两种阴离子的相对多少 —— 这正是结论反转的原因
+  const pcv = h('canvas');
+  const field = new ParticleField(pcv);
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '溶液中的阴离子')), pcv));
+
   const roHost = h('div');
   const findHost = h('div');
 
@@ -60,6 +68,7 @@ export function mount(root, params = {}) {
     panel('参数',
       h('div', { class: 'controls' }, sCl.el, sI.el)),
     panel('分步沉淀：谁先开始沉淀？', cw),
+    panel('两种阴离子谁多谁少', bench),
     panel('读数', roHost),
     findHost,
   );
@@ -104,6 +113,15 @@ export function mount(root, params = {}) {
     ]);
     chart.draw();
 
+    // 粒子数按浓度的对数压缩；两者相对多少由各自在图上的位置体现
+    const cRef = Math.max(state.cCl, state.cI, 1e-3);
+    const nOf = c => c <= 0 ? 0 : Math.max(1, Math.round(2 + (Math.log10(c) - Math.log10(cRef * 1e-6)) / 6 * 46));
+    const nCl = Math.min(nOf(state.cCl), 48), nI = Math.min(nOf(state.cI), 48);
+    field.set([
+      { label: 'Cl⁻', n: nCl, color: 'var(--w-teal)', r: 4.2 },
+      { label: 'I⁻', n: nI, color: 'var(--w-amber)', r: 4.2 },
+    ], iFirst ? `Cl⁻×${nCl}　I⁻×${nI}` : `I⁻ 只有 ${nI} 个 → 反而需要更高的 Ag⁺`);
+
     const sAgCl = solubility(KSP_AGCL, 'AB');
     const sAg2CrO4 = solubility(1.1e-12, 'A2B');
 
@@ -130,7 +148,10 @@ export function mount(root, params = {}) {
 
   render();
 
+  requestAnimationFrame(() => field.start());
+
   return {
+    stop() { field.stop(); },
     record() {
       const needCl = requiredTitrant(KSP_AGCL, state.cCl, 1, 1);
       const needI = requiredTitrant(KSP_AGI, state.cI, 1, 1);

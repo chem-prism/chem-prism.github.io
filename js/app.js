@@ -96,6 +96,9 @@ function persist() {
 
 /* ---------- 切换模拟器 ---------- */
 function navigate(id, opts, task) {
+  // 上一个模拟器若开了动画循环（粒子、滴定台），切走时先停掉
+  if (current && current.stop) { try { current.stop(); } catch { /* 忽略 */ } }
+
   const sim = byId(id);
   currentMeta = sim.meta;
   taskText = task !== undefined ? task : '';

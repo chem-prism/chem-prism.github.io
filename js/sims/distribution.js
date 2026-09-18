@@ -13,6 +13,7 @@
 
 import { distribution, bufferCapacity } from '../chem.js';
 import { Chart, sample } from '../chart.js';
+import { ParticleField } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -44,6 +45,19 @@ export function mount(root, params = {}) {
     pad: { l: 52, r: 14, t: 12, b: 32 },
   });
   ch2.xFormat = v => v.toFixed(1);
+
+  // —— 微观层：两组粒子并排对照 ——
+  // 左：当前浓度；右：稀释十倍。两边比例相同、粒子数不同，
+  // 这正是「δ 是比例，与总量无关」的直观证明。
+  const pcvA = h('canvas');
+  const pcvB = h('canvas');
+  const fieldA = new ParticleField(pcvA);
+  const fieldB = new ParticleField(pcvB);
+  const bench = h('div', { class: 'bench' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '当前浓度')), pcvA),
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '稀释 10 倍')), pcvB));
 
   const roHost = h('div');
   const findHost = h('div');
@@ -86,6 +100,7 @@ export function mount(root, params = {}) {
     panel('参数',
       h('div', { class: 'controls' }, sPka.el, sC.el, sPh.el)),
     panel('分布分数 δ–pH　（只由 pKₐ 决定）', cw1),
+    panel('同一比例，不同总量', bench),
     panel('缓冲容量 β–pH　（高度正比于总浓度）', cw2),
     panel('读数', roHost),
     findHost,
@@ -96,6 +111,20 @@ export function mount(root, params = {}) {
     const beta = bufferCapacity(state.ph, state.pka, state.c);
     const inRange = Math.abs(state.ph - state.pka) <= 1;
     const maxBeta = bufferCapacity(state.pka, state.pka, state.c);
+
+    // 微观层：左边是当前浓度，右边是稀释 10 倍。
+    // δ 完全相同 —— 比例不变，只是分子的总数变少了。
+    const N = 36;
+    const build = (cVal) => {
+      const nHA = Math.round(N * dHA);
+      const nA = N - nHA;
+      return [
+        { label: 'HA', n: nHA, color: 'var(--w-amber)', r: 5 },
+        { label: 'A⁻', n: nA, color: 'var(--w-teal)', r: 5 },
+      ];
+    };
+    fieldA.set(build(state.c), `δ(HA)=${dHA.toFixed(2)}`);
+    fieldB.set(build(state.c / 10), `δ(HA)=${dHA.toFixed(2)}　← 一模一样`);
 
     roHost.replaceChildren(readouts([
       { k: 'δ(HA)', v: dHA.toFixed(3) },
@@ -149,7 +178,10 @@ export function mount(root, params = {}) {
 
   render();
 
+  requestAnimationFrame(() => { fieldA.start(); fieldB.start(); });
+
   return {
+    stop() { fieldA.stop(); fieldB.stop(); },
     record() {
       const { dHA, dA } = distribution(state.ph, state.pka);
       const beta = bufferCapacity(state.ph, state.pka, state.c);

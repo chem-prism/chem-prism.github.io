@@ -93,6 +93,17 @@ export function jumpRange(ca, va, cb, ka) {
   return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
 }
 
+/**
+ * 滴定体系中各型体的平衡浓度 —— 供宏观/微观视图使用
+ * @returns {{h, oh, HA, A, Na, Ca, Cb}}
+ */
+export function speciation(Ca, Cb, Ka) {
+  const h = hydrogenIon(Ca, Cb, Ka);
+  const A = (Ca * Ka) / (Ka + h);     // 共轭碱
+  const HA = Math.max(Ca - A, 0);     // 未解离的酸
+  return { h, oh: KW / h, HA, A, Na: Cb, Ca, Cb };
+}
+
 /** 常用指示剂 */
 export const INDICATORS = [
   { name: '甲基橙', lo: 3.1, hi: 4.4, color: '#e0574f' },
