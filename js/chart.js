@@ -255,6 +255,20 @@ export class Chart {
     ctx.clip();
     this.series.forEach(s => {
       if (!s.points || s.points.length < 2) return;
+
+      // 棒图（质谱等）：每个点从基线画一根竖棒
+      if (s.bars) {
+        const base = this._py(s.baseline != null ? s.baseline : this.yRange[0]);
+        const bw = Math.max(1.5, Math.min(s.barWidth || 3, p.w / s.points.length * 0.6));
+        s.points.forEach(pt => {
+          const X = this._px(pt.x);
+          const Y = this._py(pt.y);
+          ctx.fillStyle = resolveColor(s.color);
+          ctx.fillRect(X - bw / 2, Math.min(Y, base), bw, Math.abs(base - Y));
+        });
+        return;
+      }
+
       if (s.fill) {
         ctx.beginPath();
         s.points.forEach((pt, i) => {
@@ -284,6 +298,21 @@ export class Chart {
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.setLineDash([]);
+
+      // 数据点标记（控制图等时间序列用）
+      if (s.dots) {
+        s.points.forEach(pt => {
+          const X = this._px(pt.x), Y = this._py(pt.y);
+          const col = pt.tone ? resolveColor(pt.tone) : (s.dotColor ? resolveColor(s.dotColor) : resolveColor(s.color));
+          ctx.beginPath();
+          ctx.arc(X, Y, s.dotR || 3.4, 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(10,14,18,0.8)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        });
+      }
     });
     ctx.restore();
 

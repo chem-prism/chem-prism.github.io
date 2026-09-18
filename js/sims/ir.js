@@ -144,7 +144,7 @@ export function mount(root, params = {}) {
   }
 
   function render() {
-    const comp = COMPOUNDS[state.idx];
+    const comp = COMPOUNDS[state.idx] || COMPOUNDS[0];   // URL 参数越界时回退
     const pts = spectrum(comp.peaks);
 
     chart.setBands([]);
@@ -207,7 +207,7 @@ export function mount(root, params = {}) {
   return {
     stop() {},
     record() {
-      const comp = COMPOUNDS[state.idx];
+      const comp = COMPOUNDS[state.idx] || COMPOUNDS[0];   // URL 参数越界时回退
       const strongest = [...comp.peaks].sort((a, b) => b[1] - a[1])[0];
       return {
         sim: '红外光谱',

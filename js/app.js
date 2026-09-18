@@ -22,13 +22,19 @@ import * as potentiometry from './sims/potentiometry.js';
 import * as chromatography from './sims/chromatography.js';
 import * as extraction from './sims/extraction.js';
 import * as ir from './sims/ir.js';
+import * as molecule3d from './sims/molecule3d.js';
+import * as aas from './sims/aas.js';
+import * as gravimetry from './sims/gravimetry.js';
+import * as qcchart from './sims/qcchart.js';
+import * as ms from './sims/ms.js';
 
 // 顺序 = 左栏显示顺序，按分析化学的知识脉络编排：
 //   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理
 const SIMS = [
   titration, distribution, edta, complexometry, redox, precipitate,
-  potentiometry, spectrophotometry, ir, chromatography, extraction,
-  precision, propagation,
+  potentiometry, spectrophotometry, ir, aas, ms,
+  chromatography, extraction, gravimetry, molecule3d,
+  qcchart, precision, propagation,
 ];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
 

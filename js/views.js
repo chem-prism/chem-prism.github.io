@@ -601,3 +601,213 @@ function niceStepLocal(range, target) {
   const n = raw / mag;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
+
+/* ============================================================
+ * 分子三维视图（球棍模型）
+ *
+ * 不引入 Three.js —— 球棍模型只是「球 + 线」，用 Canvas 2D 加
+ * 画家算法（按深度排序后从远到近绘制）就足够，且保持零依赖。
+ * 支持鼠标拖拽旋转，松开后缓慢自转。
+ * ============================================================ */
+
+// CPK 配色（按深色背景调整过明度）
+const ATOM_STYLE = {
+  H:  { color: '#e6ecf2', r: 0.34, name: '氢' },
+  C:  { color: '#98a4ae', r: 0.60, name: '碳' },
+  N:  { color: '#5c82d6', r: 0.58, name: '氮' },
+  O:  { color: '#e05a4f', r: 0.56, name: '氧' },
+  S:  { color: '#e8c15a', r: 0.70, name: '硫' },
+  Cl: { color: '#6bbc57', r: 0.68, name: '氯' },
+  Fe: { color: '#d9773d', r: 0.92, name: '铁' },
+  Cu: { color: '#c8794a', r: 0.92, name: '铜' },
+  Zn: { color: '#8f93a8', r: 0.90, name: '锌' },
+  Ca: { color: '#6bbc57', r: 1.00, name: '钙' },
+  Mg: { color: '#2fb3a3', r: 0.88, name: '镁' },
+  Co: { color: '#d16ba5', r: 0.92, name: '钴' },
+};
+
+export class Molecule3D {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.atoms = [];
+    this.bonds = [];
+    this.rotX = -0.35;
+    this.rotY = 0.6;
+    this.autoSpin = 0.0035;
+    this.dragging = false;
+    this._last = null;
+    this._raf = null;
+    this._spin = 0;
+
+    this._down = e => {
+      this.dragging = true;
+      this._last = this._pt(e);
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId ?? 1);
+    };
+    this._move = e => {
+      if (!this.dragging) return;
+      const p = this._pt(e);
+      if (this._last) {
+        this.rotY += (p.x - this._last.x) * 0.01;
+        this.rotX += (p.y - this._last.y) * 0.01;
+        this.rotX = Math.max(-1.5, Math.min(1.5, this.rotX));
+      }
+      this._last = p;
+      e.preventDefault && e.preventDefault();
+      this.draw();
+    };
+    this._up = () => { this.dragging = false; this._last = null; };
+
+    canvas.addEventListener('pointerdown', this._down);
+    canvas.addEventListener('pointermove', this._move);
+    canvas.addEventListener('pointerup', this._up);
+    canvas.addEventListener('pointercancel', this._up);
+    canvas.addEventListener('pointerleave', this._up);
+    canvas.style.touchAction = 'none';
+    canvas.style.cursor = 'grab';
+    window.addEventListener('resize', () => this.draw());
+    this.start();
+  }
+
+  _pt(e) {
+    const r = this.cv.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  /** molecule: { atoms:[{el,x,y,z}], bonds:[[i,j]|[i,j,order]] } */
+  setMolecule(mol) {
+    this.atoms = mol.atoms.map(a => ({ ...a, style: ATOM_STYLE[a.el] || ATOM_STYLE.C }));
+    this.bonds = (mol.bonds || []).map(b => ({ a: b[0], b: b[1], order: b[2] || 1 }));
+    // 居中并缩放到合适大小
+    const n = this.atoms.length || 1;
+    const cx = this.atoms.reduce((s, a) => s + a.x, 0) / n;
+    const cy = this.atoms.reduce((s, a) => s + a.y, 0) / n;
+    const cz = this.atoms.reduce((s, a) => s + a.z, 0) / n;
+    let maxR = 0;
+    this.atoms.forEach(a => {
+      a.x -= cx; a.y -= cy; a.z -= cz;
+      maxR = Math.max(maxR, Math.hypot(a.x, a.y, a.z) + a.style.r);
+    });
+    this.scaleHint = maxR || 1;
+    this.draw();
+    this.start();
+  }
+
+  start() {
+    if (this._raf) return;
+    const loop = () => {
+      if (!this.dragging) { this.rotY += this.autoSpin; }
+      this.draw();
+      this._raf = requestAnimationFrame(loop);
+    };
+    this._raf = requestAnimationFrame(loop);
+  }
+
+  stop() { if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; } }
+
+  _project(a, w, h) {
+    const cy = Math.cos(this.rotY), sy = Math.sin(this.rotY);
+    const x1 = a.x * cy + a.z * sy;
+    const z1 = -a.x * sy + a.z * cy;
+    const cx = Math.cos(this.rotX), sx = Math.sin(this.rotX);
+    const y1 = a.y * cx - z1 * sx;
+    const z2 = a.y * sx + z1 * cx;
+
+    // 相机拉远一些（6 倍分子半径），透视强度就温和，旋转时尺寸不至于忽大忽小；
+    // 缩放系数留足余量（3.4 而非 2.7），否则带氢的分子转到侧面会被裁掉。
+    const CAM = this.scaleHint * 6.0;
+    const persp = CAM / (CAM + z2);
+    const scale = Math.min(w, h) / (this.scaleHint * 3.4);
+    return {
+      X: w / 2 + x1 * scale * persp,
+      Y: h / 2 - y1 * scale * persp,
+      z: z2,
+      r: a.style.r * scale * persp,
+      persp,
+    };
+  }
+
+  draw() {
+    const c = fit(this.cv);
+    if (!c) return;
+    const { ctx, w, h } = c;
+
+    const P = this.atoms.map(a => this._project(a, w, h));
+
+    // 键与原子一起按深度排序，保证前景挡住背景
+    const items = [];
+    this.bonds.forEach(b => items.push({ kind: 'bond', z: (P[b.a].z + P[b.b].z) / 2, b }));
+    P.forEach((p, i) => items.push({ kind: 'atom', z: p.z, i }));
+    items.sort((m, n) => m.z - n.z);          // 远的（z 大）先画
+
+    items.forEach(it => {
+      if (it.kind === 'bond') {
+        const A = P[it.b.a], B = P[it.b.b];
+        // 键被端点原子遮挡，画到球心即可，球会盖住多余部分
+        ctx.beginPath();
+        ctx.moveTo(A.X, A.Y);
+        ctx.lineTo(B.X, B.Y);
+        const depth = Math.min(A.persp, B.persp);
+        ctx.strokeStyle = `rgba(190,204,216,${0.30 + 0.45 * depth})`;
+        ctx.lineWidth = Math.max(1.2, 9 * depth * (this.scaleHint > 3 ? 0.7 : 1));
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      } else {
+        const p = P[it.i];
+        const a = this.atoms[it.i];
+        // 球体：径向渐变模拟光照
+        const g = ctx.createRadialGradient(
+          p.X - p.r * 0.35, p.Y - p.r * 0.35, p.r * 0.15,
+          p.X, p.Y, p.r
+        );
+        g.addColorStop(0, lighten(a.style.color, 0.45));
+        g.addColorStop(0.6, a.style.color);
+        g.addColorStop(1, darken(a.style.color, 0.45));
+        ctx.beginPath();
+        ctx.arc(p.X, p.Y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = g;
+        ctx.fill();
+      }
+    });
+
+    // 图例（按元素去重）
+    const seen = new Set();
+    let lx = 8;
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    this.atoms.forEach(a => {
+      if (seen.has(a.el)) return;
+      seen.add(a.el);
+      ctx.beginPath();
+      ctx.arc(lx + 4, 12, 4, 0, Math.PI * 2);
+      ctx.fillStyle = a.style.color; ctx.fill();
+      ctx.fillStyle = varColor('--dim', '#7b8c99');
+      const txt = a.el;
+      ctx.fillText(txt, lx + 11, 12.5);
+      lx += 11 + ctx.measureText(txt).width + 12;
+    });
+
+    ctx.font = '10px "PingFang SC", sans-serif';
+    ctx.fillStyle = varColor('--faint', '#4c5b67');
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('拖动可旋转', w - 8, h - 6);
+  }
+}
+
+function hexToRgb(hex) {
+  const t = hex.replace('#', '');
+  return [parseInt(t.slice(0, 2), 16), parseInt(t.slice(2, 4), 16), parseInt(t.slice(4, 6), 16)];
+}
+function lighten(hex, k) {
+  const [r, g, b] = hexToRgb(hex);
+  const f = v => Math.round(v + (255 - v) * k);
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+function darken(hex, k) {
+  const [r, g, b] = hexToRgb(hex);
+  const f = v => Math.round(v * (1 - k));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
