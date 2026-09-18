@@ -328,7 +328,10 @@ export const canTitrateRedox = (e1, e2) => (e1 - e2) >= 0.35;
  */
 export function absorbance(eps, b, c, k = 0) {
   const ideal = eps * b * c;
-  return Math.max(0, ideal * (1 - k * c));
+  // 用饱和型 A = εbc / (1 + kc)，而不是线性的 (1 − kc)：
+  // 后者在 kc > 1 时会变成负数，物理上说不通，曲线也会塌掉。
+  // 饱和型在小浓度下近似 (1 − kc)，大浓度下趋于平台——与实测的负偏离一致。
+  return ideal / (1 + k * c);
 }
 
 /** 生成 A–c 标准曲线 */

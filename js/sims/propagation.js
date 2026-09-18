@@ -9,6 +9,7 @@
 
 import { propagate } from '../chem.js';
 import { Chart, sample } from '../chart.js';
+import { NumberLine } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -43,6 +44,13 @@ export function mount(root, params = {}) {
     pad: { l: 52, r: 16, t: 14, b: 34 },
   });
 
+  // 数轴误差棒：正确做法与错误做法的误差各有多长，一眼看出差多少
+  const nlcv = h('canvas');
+  const nline = new NumberLine(nlcv, { xLabel: '结果值' });
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '符号层', ' ', h('b', {}, '误差棒对照')), nlcv));
+
   const roHost = h('div');
   const findHost = h('div');
 
@@ -75,6 +83,7 @@ export function mount(root, params = {}) {
         selOp)),
     panel('参数', h('div', { class: 'controls' }, sA.el, sDa.el, sB.el, sDb.el)),
     panel('两种做法给出的误差', cw),
+    bench,
     panel('读数', roHost),
     findHost,
   );
@@ -115,6 +124,11 @@ export function mount(root, params = {}) {
       },
     ]);
     chart.draw();
+
+    nline.setBars([
+      { label: '按规则传递', value: Math.abs(res.value), err: Math.abs(res.correct), color: '--w-green' },
+      { label: '绝对误差直加', value: Math.abs(res.value), err: Math.abs(res.naive), color: '--w-red' },
+    ]);
 
     roHost.replaceChildren(readouts([
       { k: `a ${state.op} b`, v: Math.abs(res.value).toPrecision(4) },

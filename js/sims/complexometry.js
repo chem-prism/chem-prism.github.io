@@ -12,6 +12,7 @@
 
 import { complexCurve, minLgKforTitration, conditionalLgK, METALS, lgAlphaY } from '../chem.js';
 import { Chart } from '../chart.js';
+import { ParticleField } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -36,6 +37,13 @@ export function mount(root, params = {}) {
     xRange: [0, 40], yRange: [0, 14],
     pad: { l: 46, r: 16, t: 14, b: 34 },
   });
+
+  // 微观层：三种型体此消彼长
+  const pcv = h('canvas');
+  const field = new ParticleField(pcv);
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '金属离子与 EDTA')), pcv));
 
   const roHost = h('div');
   const findHost = h('div');
@@ -64,6 +72,7 @@ export function mount(root, params = {}) {
           selMetal),
         sC.el, sPh.el)),
     panel('配位滴定曲线', cw),
+    panel('三种型体此消彼长', bench),
     panel('读数', roHost),
     findHost,
   );
@@ -105,6 +114,19 @@ export function mount(root, params = {}) {
     }]);
     chart.draw();
 
+    // 取计量点处的型体分布作为代表
+    const CM = state.c / 2, CY = state.c / 2;
+    const K = Math.pow(10, lgKc);
+    const bb2 = -(K * (CM + CY) + 1), cc2 = K * CM * CY;
+    const my = (-bb2 - Math.sqrt(Math.max(bb2 * bb2 - 4 * K * cc2, 0))) / (2 * K);
+    const freeM = Math.max(CM - my, 0), freeY = Math.max(CY - my, 0);
+    const toN = c => Math.max(0, Math.round(40 * (c / Math.max(CM, CY))));
+    field.set([
+      { label: 'M', n: toN(freeM), color: 'var(--w-amber)', r: 4.6 },
+      { label: 'Y', n: toN(freeY), color: 'var(--w-green)', r: 4.6 },
+      { label: 'MY', n: toN(my), color: 'var(--w-teal)', r: 4.6 },
+    ], `计量点附近：已生成 ${toN(my)} 个配合物`);
+
     roHost.replaceChildren(readouts([
       { k: 'lg α_Y(H)', v: lga.toFixed(2), tone: lga > 6 ? 'bad' : lga > 2 ? 'warn' : 'good' },
       { k: 'lg K′', v: lgKc.toFixed(2), tone: ok ? 'good' : 'bad' },
@@ -130,8 +152,10 @@ export function mount(root, params = {}) {
   }
 
   render();
+  requestAnimationFrame(() => field.start());
 
   return {
+    stop() { field.stop(); },
     record() {
       const m = METALS.find(x => x.name === state.metal) || METALS[0];
       const lgKc = conditionalLgK(m.lgK, state.ph);

@@ -9,6 +9,7 @@
 
 import { calibrationCurve, absorbance, concFromAbs } from '../chem.js';
 import { Chart } from '../chart.js';
+import { Cuvette } from '../views.js';
 import { h, panel, readouts, slider, finding, sig } from './common.js';
 
 export const meta = {
@@ -23,7 +24,7 @@ export function mount(root, params = {}) {
   const state = {
     eps: params.eps != null ? +params.eps : 1.0e4,
     b: params.b != null ? +params.b : 1.0,
-    cMax: params.cmax != null ? +params.cmax : 1.2e-3,
+    cMax: params.cmax != null ? +params.cmax : 1.5e-4,
     k: params.k != null ? +params.k : 0,
   };
 
@@ -35,6 +36,13 @@ export function mount(root, params = {}) {
     pad: { l: 46, r: 16, t: 14, b: 34 },
   });
   chart.xFormat = v => v.toFixed(2);
+
+  // 宏观层：光路 —— 入射光穿过比色皿，被吸收一部分后变暗
+  const ccv = h('canvas');
+  const cuvette = new Cuvette(ccv);
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '宏观层', ' ', h('b', {}, '光路')), ccv));
 
   const roHost = h('div');
   const findHost = h('div');
@@ -49,12 +57,12 @@ export function mount(root, params = {}) {
     format: v => v.toFixed(1), onInput: v => { state.b = v; render(); },
   });
   const sCmax = slider({
-    name: '浓度上限', hint: 'mmol/L', min: 0.2, max: 3, step: 0.1, value: state.cMax * 1000,
+    name: '浓度上限', hint: 'mmol/L', min: 0.05, max: 0.45, step: 0.01, value: state.cMax * 1000,
     format: v => v.toFixed(1), onInput: v => { state.cMax = v / 1000; render(); },
   });
   const sK = slider({
     name: '偏离系数', hint: '0 = 完全符合比尔定律',
-    min: 0, max: 1500, step: 25, value: state.k,
+    min: 0, max: 6000, step: 100, value: state.k,
     format: v => v === 0 ? '0（无偏离）' : String(v),
     onInput: v => { state.k = v; render(); },
   });
@@ -64,8 +72,9 @@ export function mount(root, params = {}) {
       h('div', { class: 'controls' }, sEps.el, sB.el, sCmax.el, sK.el),
       h('div', { class: 'btn-row', style: 'margin-top:12px' },
         h('button', { class: 'btn', onclick: () => { state.k = 0; sK.set(0); render(); } }, '无偏离'),
-        h('button', { class: 'btn', onclick: () => { state.k = 500; sK.set(500); render(); } }, '轻度偏离'),
-        h('button', { class: 'btn', onclick: () => { state.k = 1200; sK.set(1200); render(); } }, '严重偏离'))),
+        h('button', { class: 'btn', onclick: () => { state.k = 1500; sK.set(1500); render(); } }, '轻度偏离'),
+        h('button', { class: 'btn', onclick: () => { state.k = 5000; sK.set(5000); render(); } }, '严重偏离'))),
+    panel('仪器里发生了什么', bench),
     panel('标准曲线 A–c', cw),
     panel('读数', roHost),
     findHost,
@@ -82,11 +91,21 @@ export function mount(root, params = {}) {
     return null;
   }
 
+  function aTopOf(st) { return absorbance(st.eps, st.b, st.cMax, st.k); }
+
   function render() {
     const curve = calibrationCurve({ eps: state.eps, b: state.b, cMax: state.cMax, k: state.k });
     const linear = curve.map(p => ({ x: p.c * 1000, y: state.eps * state.b * p.c }));
     const actual = curve.map(p => ({ x: p.c * 1000, y: p.A }));
     const lim = linearLimit();
+
+    // 比色皿：颜色深浅随吸光度加深，透射光相应变暗
+    cuvette.set({
+      color: [86, 128, 208],
+      abs: aTopOf(state),
+      caption: state.k === 0 ? '完全符合比尔定律' : '高浓度下透射光偏亮',
+      sub: '透射光变暗的程度 = 被吸收的量',
+    });
 
     // 自动 y 轴：以理想直线的最高点为准
     const yTop = Math.max(state.eps * state.b * state.cMax, 0.2) * 1.1;

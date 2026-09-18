@@ -9,6 +9,7 @@
 
 import { redoxCurve, redoxEquivalence, redoxJump, canTitrateRedox } from '../chem.js';
 import { Chart } from '../chart.js';
+import { ParticleField } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -42,6 +43,13 @@ export function mount(root, params = {}) {
     xRange: [0, 40], yRange: [-100, 1600],
     pad: { l: 52, r: 16, t: 14, b: 34 },
   });
+
+  // 微观层：滴定过程中四种型体的此消彼长
+  const pcv = h('canvas');
+  const field = new ParticleField(pcv);
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '两种电对的型体')), pcv));
 
   const roHost = h('div');
   const findHost = h('div');
@@ -85,6 +93,7 @@ export function mount(root, params = {}) {
         selPreset)),
     panel('参数', h('div', { class: 'controls' }, sE1.el, sE2.el, sN1.el, sN2.el, sC.el)),
     panel('滴定曲线', cw),
+    panel('型体此消彼长', bench),
     panel('读数', roHost),
     findHost,
   );
@@ -118,6 +127,17 @@ export function mount(root, params = {}) {
     }]);
     chart.draw();
 
+    // 微观层：待测物被氧化、滴定剂被还原，两侧同步变化
+    const fMid = 0.5;   // 展示计量点处的代表状态
+    const N = 40;
+    const nRed2 = Math.round(N * (1 - fMid)), nOx2 = N - nRed2;
+    field.set([
+      { label: '待测物·还原态', n: nRed2, color: 'var(--w-amber)', r: 4.6 },
+      { label: '待测物·氧化态', n: nOx2, color: 'var(--w-teal)', r: 4.6 },
+      { label: '滴定剂·还原态', n: nOx2, color: 'var(--w-indigo)', r: 4.6 },
+      { label: '滴定剂·氧化态', n: nRed2, color: 'var(--w-red)', r: 4.6 },
+    ], '计量点：待测物一半被氧化，滴定剂一半被还原');
+
     roHost.replaceChildren(readouts([
       { k: 'ΔE°′', v: dE.toFixed(2), unit: 'V', tone: ok ? 'good' : 'bad' },
       { k: '化学计量点电位', v: (eq * 1000).toFixed(0), unit: 'mV' },
@@ -142,8 +162,10 @@ export function mount(root, params = {}) {
   }
 
   render();
+  requestAnimationFrame(() => field.start());
 
   return {
+    stop() { field.stop(); },
     record() {
       const jr = redoxJump(state);
       const eq = redoxEquivalence(state.e1, state.e2, state.n1, state.n2);

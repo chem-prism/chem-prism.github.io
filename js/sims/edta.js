@@ -9,6 +9,7 @@
 
 import { lgAlphaY, conditionalLgK, canTitrate, minPHfor, METALS } from '../chem.js';
 import { Chart, sample } from '../chart.js';
+import { ParticleField } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -33,6 +34,14 @@ export function mount(root, params = {}) {
     pad: { l: 44, r: 16, t: 14, b: 34 },
   });
   chart.xFormat = v => v.toFixed(1);
+
+  // 微观层：EDTA 到底有多少是「自由的」Y⁴⁻
+  // δ(Y⁴⁻) = 1/α_Y(H) —— 这个比例就是酸效应的全部含义
+  const pcv = h('canvas');
+  const field = new ParticleField(pcv);
+  const bench = h('div', { class: 'bench single' },
+    h('div', { class: 'bench-cell bench-particles' },
+      h('div', { class: 'bench-tag' }, '微观层', ' ', h('b', {}, '溶液里的 EDTA')), pcv));
 
   const roHost = h('div');
   const findHost = h('div');
@@ -73,6 +82,7 @@ export function mount(root, params = {}) {
         sC.el,
         sPh.el)),
     panel('条件稳定常数随 pH 的变化', cw),
+    panel('EDTA 有多少是自由的', bench),
     panel('读数', roHost),
     findHost,
   );
@@ -85,6 +95,15 @@ export function mount(root, params = {}) {
     const crit = 6 - Math.log10(state.c);
     const ok = canTitrate(lgc, state.c);
     const minPH = minPHfor(m, state.c);
+
+    // 微观层：Y⁴⁻ 占的比例 = 1/α_Y(H)。pH 低时几乎全部被质子化。
+    const freeFrac = Math.pow(10, -lga);
+    const N = 40;
+    const nFree = Math.max(freeFrac > 1e-4 ? 1 : 0, Math.round(N * freeFrac));
+    field.set([
+      { label: 'Y⁴⁻', n: nFree, color: 'var(--w-green)', r: 4.6 },
+      { label: '被 H⁺ 占住', n: N - nFree, color: 'var(--w-red)', r: 4.6 },
+    ], freeFrac < 1e-4 ? '几乎没有游离的 Y⁴⁻' : `游离 Y⁴⁻ 占 ${(freeFrac * 100).toPrecision(2)}%`);
 
     roHost.replaceChildren(readouts([
       { k: 'lg α_Y(H)　酸效应', v: lga.toFixed(2), tone: lga > 6 ? 'bad' : lga > 2 ? 'warn' : 'good' },
@@ -131,8 +150,10 @@ export function mount(root, params = {}) {
   }
 
   render();
+  requestAnimationFrame(() => field.start());
 
   return {
+    stop() { field.stop(); },
     record() {
       const m = METALS.find(x => x.name === state.metal);
       const lgc = conditionalLgK(m.lgK, state.ph);

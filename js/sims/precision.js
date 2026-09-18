@@ -8,6 +8,7 @@
  */
 
 import { gaussian, mean, stdev } from '../chem.js';
+import { NumberLine } from '../views.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
 export const meta = {
@@ -35,6 +36,9 @@ export function mount(root, params = {}) {
   };
 
   const canvas = h('canvas', { class: 'target-canvas' });
+  // 同一批数据的另一种呈现：散点摊在数轴上，直接看出偏得多远、散得多开
+  const nlcv = h('canvas');
+  const nline = new NumberLine(nlcv, { xLabel: '偏离靶心的距离' });
   const statHost = h('div', { style: 'flex:1;min-width:210px' });
   const findHost = h('div');
 
@@ -64,6 +68,7 @@ export function mount(root, params = {}) {
   root.append(
     panel('参数', h('div', { class: 'controls' }, sSigma.el, sBias.el), h('div', { style: 'margin-top:14px' }, presetRow)),
     panel('靶面', h('div', { class: 'target-wrap' }, canvas, statHost)),
+    panel('同一批测量值，摊在数轴上', nlcv),
     findHost,
   );
 
@@ -81,6 +86,9 @@ export function mount(root, params = {}) {
     }
     state.shots = shots;
     drawTarget();
+    // 散点用「偏离靶心的距离」：离 0 越远越偏，点越散越不准
+    const dists = state.shots.map(s2 => Math.hypot(s2.x, s2.y));
+    nline.setDots(dists.map(d => ({ value: d, color: '--w-red' })));
     updateStats();
   }
 
@@ -192,6 +200,7 @@ export function mount(root, params = {}) {
   });
 
   return {
+    stop() {},
     record() {
       const xs = state.shots.map(s => s.x);
       const ys = state.shots.map(s => s.y);

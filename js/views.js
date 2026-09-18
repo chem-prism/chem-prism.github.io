@@ -362,3 +362,242 @@ export function visualCount(c, { min = 0, cRef = 1, cMin } = {}) {
   const t = Math.log10(c / lo) / Math.log10(cRef / lo);   // 0~1
   return Math.max(min, Math.round(1 + t * 35));
 }
+
+/* ============================================================
+ * 比色皿与光路视图（分光光度法）
+ *
+ * 把仪器的工作过程画出来：光源 → 单色器 → 比色皿 → 检测器。
+ * 入射光强 I₀ 与透射光强 I 的差别就是被吸收的部分，
+ * 学生看到"光变暗了"，就理解了 A = lg(I₀/I) 在测什么。
+ * ============================================================ */
+
+export class Cuvette {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.color = [200, 120, 80, 0.5];   // 溶液颜色
+    this.abs = 0;                        // 吸光度
+    this.caption = '';
+    this.sub = '';
+    window.addEventListener('resize', () => this.draw());
+  }
+
+  set({ color, abs, caption, sub }) {
+    if (color) this.color = color;
+    if (abs != null) this.abs = abs;
+    if (caption !== undefined) this.caption = caption;
+    if (sub !== undefined) this.sub = sub;
+    this.draw();
+  }
+
+  draw() {
+    const c = fit(this.cv);
+    if (!c) return;
+    const { ctx, w, h } = c;
+
+    const cy = h * 0.42;
+    const cw = Math.min(w * 0.22, 62);      // 比色皿宽
+    const chh = Math.min(h * 0.42, 74);     // 比色皿高
+    const cx = (w - cw) / 2;
+
+    // 光源
+    ctx.beginPath();
+    ctx.arc(22, cy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8c15a';
+    ctx.fill();
+    ctx.font = '9px "PingFang SC", sans-serif';
+    ctx.fillStyle = varColor('--faint', '#4c5b67');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('光源', 22, cy + 12);
+
+    // 入射光（粗、亮）
+    const beamY = cy;
+    ctx.strokeStyle = 'rgba(232,193,90,0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(30, beamY);
+    ctx.lineTo(cx, beamY);
+    ctx.stroke();
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = 'rgba(232,193,90,0.9)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('I₀', (30 + cx) / 2, beamY - 4);
+
+    // 比色皿
+    const ctop = cy - chh / 2, cbot = cy + chh / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cx, ctop, cw, chh);
+    ctx.strokeStyle = 'rgba(160,180,196,0.6)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    // 溶液（只有光路经过的那一段有颜色，符合实际观察）
+    // 颜色可能只给三元组，alpha 需兜底——否则 rgba(...) 非法、fillStyle 被静默忽略
+    const [rr, gg, bb, aa0] = this.color;
+    const aa = Math.min(aa0 == null ? 0.8 : aa0, 0.92);
+    ctx.fillStyle = `rgba(${rr},${gg},${bb},${aa})`;
+    ctx.fillRect(cx + 1, ctop + 1, cw - 2, chh - 2);
+    ctx.restore();
+
+    // 透射光（粗细与亮度随吸光度衰减）
+    const T = Math.pow(10, -this.abs);           // 透光率
+    const tw = Math.max(0.8, 3 * Math.sqrt(T));
+    const alpha = 0.15 + 0.8 * Math.min(1, Math.sqrt(T));
+    ctx.strokeStyle = `rgba(232,193,90,${alpha})`;
+    ctx.lineWidth = tw;
+    ctx.beginPath();
+    ctx.moveTo(cx + cw, beamY);
+    ctx.lineTo(w - 30, beamY);
+    ctx.stroke();
+
+    // 检测器
+    ctx.beginPath();
+    ctx.rect(w - 28, cy - 8, 12, 16);
+    ctx.fillStyle = 'rgba(160,180,196,0.5)';
+    ctx.fill();
+    ctx.fillStyle = varColor('--faint', '#4c5b67');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('检测器', w - 22, cy + 12);
+
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = 'rgba(232,193,90,0.75)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('I', (cx + cw + w - 30) / 2, beamY - 4);
+
+    // 吸光度
+    ctx.font = '600 14px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = varColor('--text', '#dde5ec');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`A = ${this.abs.toFixed(3)}`, w / 2, h * 0.76);
+    ctx.font = '11px "PingFang SC", sans-serif';
+    ctx.fillStyle = varColor('--faint', '#4c5b67');
+    ctx.fillText(this.caption || '', w / 2, h * 0.76 + 20);
+    if (this.sub) ctx.fillText(this.sub, w / 2, h * 0.76 + 36);
+  }
+}
+
+/* ============================================================
+ * 数轴误差棒视图（误差传递、精密度）
+ *
+ * 把「量 ± 误差」画成数轴上的一根棒。误差传递的规则对不对，
+ * 看棒有多长就一目了然——比看公式直观得多。
+ * ============================================================ */
+
+export class NumberLine {
+  constructor(canvas, opts = {}) {
+    this.cv = canvas;
+    this.bars = [];     // [{ label, value, err, color, dash }]
+    this.dots = [];     // [{ value, color }]
+    this.xLabel = opts.xLabel || '';
+    this.window = opts.window || null;   // 强制 x 范围 [lo,hi]
+    window.addEventListener('resize', () => this.draw());
+  }
+
+  setBars(bars) { this.bars = bars || []; this.draw(); }
+  setDots(dots) { this.dots = dots || []; this.draw(); }
+
+  _range() {
+    let lo = Infinity, hi = -Infinity;
+    this.bars.forEach(b => {
+      lo = Math.min(lo, b.value - b.err);
+      hi = Math.max(hi, b.value + b.err);
+    });
+    this.dots.forEach(d => { lo = Math.min(lo, d.value); hi = Math.max(hi, d.value); });
+    if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
+    const pad = Math.max((hi - lo) * 0.18, Math.abs(hi) * 0.02, 1e-9);
+    return [lo - pad, hi + pad];
+  }
+
+  draw() {
+    const c = fit(this.cv);
+    if (!c) return;
+    const { ctx, w, h } = c;
+    const [lo, hi] = this.window || this._range();
+    const PAD = 34;
+    const X = v => PAD + ((v - lo) / (hi - lo)) * (w - PAD * 2);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.015)';
+    ctx.fillRect(0, 0, w, h);
+
+    const axisY = h * 0.62;
+
+    // 轴线
+    ctx.strokeStyle = varColor('--line', '#212b34');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD, axisY); ctx.lineTo(w - PAD, axisY);
+    ctx.stroke();
+
+    // 刻度
+    const range = hi - lo;
+    const step = niceStepLocal(range, 5);
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = varColor('--dim', '#7b8c99');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) {
+      const x = Math.round(X(v)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, axisY - 4); ctx.lineTo(x, axisY + 4);
+      ctx.strokeStyle = 'rgba(160,180,196,0.28)';
+      ctx.stroke();
+      const dec = Math.max(0, -Math.floor(Math.log10(step)));
+      ctx.fillText(v.toFixed(Math.min(dec, 4)), x, axisY + 7);
+    }
+
+    // 误差棒
+    this.bars.forEach((b, i) => {
+      const y = axisY - 30 - i * 26;
+      const x1 = X(b.value - b.err), x2 = X(b.value + b.err), xm = X(b.value);
+      const col = resolveColor(b.color || '--w-amber');
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 6;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x1, y - 6); ctx.lineTo(x1, y + 6);
+      ctx.moveTo(x2, y - 6); ctx.lineTo(x2, y + 6);
+      ctx.moveTo(xm, y - 9); ctx.lineTo(xm, y + 9);
+      ctx.stroke();
+      ctx.font = '10px "PingFang SC", sans-serif';
+      ctx.fillStyle = varColor('--dim', '#7b8c99');
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, PAD - 6, y);
+    });
+
+    // 散点（精密度用）
+    if (this.dots.length) {
+      const y = axisY - 22;
+      ctx.globalAlpha = 0.9;
+      this.dots.forEach(d => {
+        ctx.beginPath();
+        ctx.arc(X(d.value), y, 3.4, 0, Math.PI * 2);
+        ctx.fillStyle = resolveColor(d.color || '--w-red');
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    if (this.xLabel) {
+      ctx.font = '10px "PingFang SC", sans-serif';
+      ctx.fillStyle = varColor('--faint', '#4c5b67');
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(this.xLabel, w - PAD, h - 6);
+    }
+  }
+}
+
+function niceStepLocal(range, target) {
+  const raw = range / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+}
