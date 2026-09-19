@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>场景构图自检</title>
+<style>
+  body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
+  .grid { display:grid; grid-template-columns:repeat(2,725px); gap:6px; padding:6px; }
+  .cell { width:725px; height:340px; overflow:hidden; position:relative;
+          border:1px solid #212b34; border-radius:6px; background:#10161c; }
+  .cell iframe { position:absolute; border:0; width:1240px; height:1000px;
+                 left:-225px; top:-605px; }
+  .tag { position:absolute; left:6px; top:4px; z-index:5; font-size:11px;
+         background:rgba(10,14,18,.82); color:#e8a33d; padding:1px 6px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="grid" id="g"></div>
+<script>
+const FROM = +(new URLSearchParams(location.search).get('from') || 0);
+const N = 6;
+const NAMES = ['称取铁粉','加入硫酸','加热溶解','趁热过滤','加入硫酸铵','水浴蒸发',
+               '冷却结晶','减压抽滤','乙醇洗涤','晾干','称重','目视比色'];
+const g = document.getElementById('g');
+for (let i = FROM; i < FROM + N; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell';
+  d.innerHTML = `<div class="tag">${i + 1}. ${NAMES[i]}</div>` +
+    `<iframe src="/?sim=mohr-salt&step=${i}"></iframe>`;
+  g.append(d);
+}
+</script>
+</body>
+</html>

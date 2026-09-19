@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>璃器皿自检</title>
+<style>
+  body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script type="module">
+import * as G from './js/glassware.js';
+
+const COLS = 5, CELL_W = 200, CELL_H = 260, ROWS = 3;
+const cv = document.getElementById('cv');
+const dpr = 2;
+cv.width = COLS * CELL_W * dpr;
+cv.height = ROWS * CELL_H * dpr;
+cv.style.width = (COLS * CELL_W) + 'px';
+cv.style.height = (ROWS * CELL_H) + 'px';
+const ctx = cv.getContext('2d');
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+ctx.fillStyle = '#0a0e12';
+ctx.fillRect(0, 0, COLS * CELL_W, ROWS * CELL_H);
+
+const LIQ = [110, 200, 190, 0.55];
+
+// 每格画一个器皿：坐标系原点挪到格子左上角
+const items = [
+  ['锥形瓶 液位0.35', (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.35 })],
+  ['锥形瓶 液位0.7',  (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.7 })],
+  ['量筒 正立',        (c, b) => G.cylinder(c, b, { liquid: LIQ, level: 0.6 })],
+  ['加酸场景（实际尺寸）', (c, b) => {
+    // 复刻 sims/mohr-salt.js 里 'pour' 那一步的构图与尺寸
+    c.save();
+    c.translate(b.x + b.w * 0.30, b.y + b.h * 0.46);
+    c.rotate(0.42);
+    G.cylinder(c, { x: -21, y: -68, w: 42, h: 136 }, { liquid: LIQ, level: 0.62 });
+    c.restore();
+    G.conicalFlask(c, { x: b.x + b.w * 0.46, y: b.y + 12, w: 62, h: b.h - 24 },
+      { liquid: LIQ, level: 0.18 });
+  }],
+  ['短颈漏斗',         (c, b) => G.funnel(c, b, { liquid: LIQ, level: 0.45, stemLevel: 0.8 })],
+
+  ['蒸发皿',           (c, b) => G.evapDish(c, b, { liquid: LIQ, level: 0.45 })],
+  ['水浴锅',           (c, b) => G.waterBath(c, b, { steam: 0.7, t: 1.2, ringW: b.w * 0.55 })],
+  ['布氏漏斗',         (c, b) => G.buchner(c, b, { liquid: LIQ, level: 0.4, cake: 0.65, cakeColor: G.MOHR_CRYSTAL_COLOR, dropColor: LIQ, dripping: true })],
+  ['抽滤瓶',           (c, b) => G.suctionFlask(c, b, { liquid: LIQ, level: 0.3 })],
+  ['表面皿',           (c, b) => G.watchGlass(c, b, { crystal: 0.8, crystalColor: G.MOHR_CRYSTAL_COLOR, t: 1 })],
+
+  ['比色管',           (c, b) => G.comparisonTube(c, b, { liquid: [203, 64, 69, 1], level: 0.62 })],
+  ['台秤',             (c, b) => G.balance(c, b, { item: true, itemColor: G.MOHR_CRYSTAL_COLOR, reading: '10.42', tone: 'good' })],
+  ['电热板',           (c, b) => G.hotplate(c, b, { heat: 0.8, steam: 0.4, t: 1 })],
+  ['玻璃棒',           (c, b) => G.stirringRod(c, b, { angle: 18 })],
+  ['气泡 + 晶体',      (c, b) => { G.bubbles(c, b, 1.5, 0.9);
+                                   G.crystals(c, { x: b.x + 10, y: b.y + 10, w: b.w - 20, h: b.h - 20 }, 1.5, 0.7, { color: G.MOHR_CRYSTAL_COLOR }); }],
+];
+
+items.forEach(([name, fn], i) => {
+  const col = i % COLS, row = (i / COLS) | 0;
+  const ox = col * CELL_W, oy = row * CELL_H;
+  ctx.save();
+  ctx.translate(ox, oy);
+  // 格子边框
+  ctx.strokeStyle = 'rgba(160,180,196,0.12)';
+  ctx.strokeRect(0.5, 0.5, CELL_W - 1, CELL_H - 1);
+  ctx.font = '11px "PingFang SC", sans-serif';
+  ctx.fillStyle = '#7b8c99';
+  ctx.textAlign = 'left';
+  ctx.fillText(name, 7, 15);
+  // 器皿画在格子中下部
+  fn(ctx, { x: 40, y: 34, w: CELL_W - 80, h: CELL_H - 74 });
+  ctx.restore();
+});
+</script>
+</body>
+</html>

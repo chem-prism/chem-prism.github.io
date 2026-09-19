@@ -24,7 +24,7 @@ import { Chart } from '../chart.js';
 import { ParticleField } from '../views.js';
 import { h, panel, readouts, finding } from './common.js';
 import {
-  Scene,
+  Scene, fitAspect,
   conicalFlask, cylinder, funnel, evapDish, waterBath,
   buchner, suctionFlask, watchGlass, comparisonTube,
   hotplate, balance, stirringRod,
@@ -525,48 +525,78 @@ export function mount(root, params = {}) {
     const ox = r.oxidizedFrac;
     const solColor = ferrousSolutionColor(r.mgFe3);
 
-    // 台面
+    /*
+     * 台面线。所有「放在台面上」的器皿都以它为底——
+     * 之前每处各自写 H*0.xx，结果有的浮空、有的陷进加热台里。
+     */
+    const BENCH = H * 0.88;
     ctx.save();
     ctx.strokeStyle = 'rgba(160,180,196,0.16)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(W * 0.06, H * 0.88);
-    ctx.lineTo(W * 0.94, H * 0.88);
+    ctx.moveTo(W * 0.06, BENCH);
+    ctx.lineTo(W * 0.94, BENCH);
     ctx.stroke();
     ctx.restore();
 
-    const F = (w, hh) => ({ x: cx - w / 2, y: cy - hh / 2, w, h: hh });
+    /** 底边落在 y 上、给定宽度与高度的器皿框 */
+    const onBench = (w, hh, bottom = BENCH) => ({ x: cx - w / 2, y: bottom - hh, w, h: hh });
 
     if (key === 'weigh' || key === 'weigh2') {
-      const b = balance(ctx, { x: cx - 110, y: H * 0.24, w: 220, h: H * 0.5 }, {
-        item: true,
-        itemColor: key === 'weigh2' ? MOHR_CRYSTAL_COLOR : IRON_POWDER_COLOR,
-        itemSize: key === 'weigh2' ? 1.25 : 1,
+      const bh = H * 0.50;
+      const box = { x: cx - 110, y: BENCH - bh, w: 220, h: bh };
+      const panY = box.y + bh * 0.16;                 // 与 balance() 里的秤盘同高
+      balance(ctx, box, {
+        item: key !== 'weigh2',
+        itemColor: IRON_POWDER_COLOR,
         reading: key === 'weigh2' ? r.mYield.toFixed(2) : '2.00',
         tone: key === 'weigh2' ? (r.yieldFrac > 0.6 ? 'good' : 'warn') : '',
       });
+      // 产品摊在秤盘上——不是画在天平读数面板上
       if (key === 'weigh2') {
-        crystals(ctx, { x: cx - 60, y: H * 0.5, w: 120, h: 30 }, t, Math.min(1, r.mYield / 13), { color: MOHR_CRYSTAL_COLOR, spin: false });
+        crystals(ctx, { x: cx - 74, y: panY - 15, w: 148, h: 13 }, t,
+          Math.min(1, r.mYield / 13), { color: MOHR_CRYSTAL_COLOR, spin: false });
       }
       return;
     }
 
     if (key === 'pour') {
-      const flask = { x: cx - 20, y: H * 0.28, w: 130, h: H * 0.56 };
-      conicalFlask(ctx, flask, { liquid: CLEAR_COLOR, level: 0.18 });
-      // 量筒倾倒
+      /*
+       * 量筒倾斜倒液。倾斜时液面在世界坐标里仍是**水平**的——
+       * cylinder 的 tilt 参数会照此填充；否则会画出一个跟着管子歪掉的液面。
+       */
+      const flask = { x: cx - 20, y: BENCH - H * 0.56, w: 130, h: H * 0.56 };
+      conicalFlask(ctx, flask, { liquid: CLEAR_COLOR, level: 0.2 });
+
+      const cylW = 52, cylH = H * 0.40, tilt = 1.45;
+      // 局部框的开口在顶边中点；旋转后它的世界位置决定框摆在哪
+      const mouthX = cx - 32, mouthY = H * 0.22;
+      const offX = (cylH / 2) * Math.sin(tilt);
+      const offY = -(cylH / 2) * Math.cos(tilt);
+      cylinder(ctx, {
+        x: mouthX - offX - cylW / 2, y: mouthY - offY - cylH / 2, w: cylW, h: cylH,
+      }, { liquid: CLEAR_COLOR, level: 0.55, tilt });
+
+      // 从壶嘴落入锥形瓶口的液流
+      const ex = flask.x + flask.w / 2, ey = flask.y + 5;
       ctx.save();
-      ctx.translate(cx - 190, H * 0.3);
-      ctx.rotate(0.42);
-      cylinder(ctx, { x: 0, y: 0, w: 42, h: H * 0.4 }, { liquid: CLEAR_COLOR, level: 0.62 });
+      ctx.strokeStyle = 'rgba(222,232,240,0.42)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(mouthX + 3, mouthY + 2);
+      ctx.quadraticCurveTo(mouthX + 26, (mouthY + ey) / 2, ex, ey);
+      ctx.stroke();
       ctx.restore();
-      steam(ctx, { x: cx - 80, y: H * 0.2, w: 120, h: 60 }, t, 0.15);
       return;
     }
 
     if (key === 'boil') {
-      hotplate(ctx, { x: cx - 105, y: H * 0.62, w: 210, h: H * 0.26 }, { heat: 0.8, steam: 0.35, t });
-      const flask = { x: cx - 20, y: H * 0.16, w: 130, h: H * 0.5 };
+      const plateH = H * 0.24;
+      const plate = { x: cx - 105, y: BENCH - plateH, w: 210, h: plateH };
+      hotplate(ctx, plate, { heat: 0.8, steam: 0.35, t });
+      // 瓶底**落在**电热板上表面，不陷进去
+      const flask = { x: cx - 20, y: plate.y - H * 0.46, w: 130, h: H * 0.46 };
       conicalFlask(ctx, flask, { liquid: solColor, level: 0.42 });
       bubbles(ctx, { x: flask.x + 26, y: flask.y + flask.h * 0.58, w: flask.w - 52, h: flask.h * 0.38 }, t, 0.9);
       return;
@@ -574,63 +604,97 @@ export function mount(root, params = {}) {
 
     if (key === 'filter') {
       const hot = activeOps().Tfilter >= 70;
-      const fl = { x: cx - 25, y: H * 0.14, w: 120, h: H * 0.38 };
+      const flask = { x: cx - 60, y: BENCH - H * 0.38, w: 130, h: H * 0.38 };
+      conicalFlask(ctx, flask, { liquid: solColor, level: hot ? 0.3 : 0.12 });
+
+      // 漏斗短颈插进瓶口：颈口以下约 4% 画布高
+      const flH = H * 0.28;
+      const fl = { x: cx - 28, y: flask.y + H * 0.04 - flH, w: 120, h: flH };
       funnel(ctx, fl, {
         liquid: hot ? solColor : ferrousSolutionColor(r.mgFe3 * 0.6),
         level: 0.42,
         paperDirty: !hot,
         stemLevel: 0.8,
       });
-      // 接收瓶
-      conicalFlask(ctx, { x: cx - 60, y: H * 0.52, w: 130, h: H * 0.36 },
-        { liquid: solColor, level: hot ? 0.3 : 0.12 });
-      if (hot) steam(ctx, { x: cx - 70, y: H * 0.08, w: 150, h: 60 }, t, 0.6);
-      // 冷过滤时滤纸上析出的晶体
+      if (hot) steam(ctx, { x: cx - 70, y: fl.y - 50, w: 150, h: 60 }, t, 0.6);
       if (!hot) {
-        crystals(ctx, { x: fl.x + 24, y: fl.y + 18, w: fl.w - 48, h: 26 }, t, 0.8, { color: MOHR_CRYSTAL_COLOR, spin: false });
-        label2(ctx, '冷过滤：FeSO₄·7H₂O 结晶在滤纸上', cx, H * 0.93, 'var(--w-red)');
+        crystals(ctx, { x: fl.x + 26, y: fl.y + 20, w: fl.w - 52, h: 20 }, t, 0.8,
+          { color: MOHR_CRYSTAL_COLOR, spin: false });
+        label2(ctx, '冷过滤：FeSO₄·7H₂O 结晶在滤纸上', cx, H * 0.94, 'var(--w-red)');
       }
       return;
     }
 
     if (key === 'addAS') {
-      const flask = { x: cx - 20, y: H * 0.24, w: 130, h: H * 0.56 };
+      const flask = { x: cx - 20, y: BENCH - H * 0.56, w: 130, h: H * 0.56 };
       conicalFlask(ctx, flask, { liquid: solColor, level: 0.5 });
-      // 白色粉末加入
+      const mouthX = flask.x + flask.w / 2, mouthY = flask.y;
+
+      // 白色固体自瓶口落入液面
       ctx.save();
       ctx.fillStyle = 'rgba(232,238,244,0.9)';
       for (let i = 0; i < 16; i++) {
         const ph = (t * 0.4 + i * 0.11) % 1;
         ctx.globalAlpha = 1 - ph;
         ctx.beginPath();
-        ctx.arc(cx + 14 + Math.sin(i * 2.1) * 26, H * 0.24 + ph * H * 0.3, 1.6, 0, Math.PI * 2);
+        ctx.arc(mouthX + Math.sin(i * 2.1) * 15, mouthY - 46 + ph * (H * 0.28), 1.6, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
-      stirringRod(ctx, { x: cx + 8, y: H * 0.3, w: 22, h: 130 }, { angle: 14 });
+      // 玻璃棒插在瓶内搅拌
+      stirringRod(ctx, { x: mouthX - 5, y: flask.y + H * 0.10, w: 20, h: H * 0.32 }, { angle: 12 });
       return;
     }
 
     if (key === 'evap') {
-      waterBath(ctx, { x: cx - 150, y: H * 0.44, w: 300, h: H * 0.42 }, { steam: 0.7, t, ringW: 190 });
-      const lvl = Math.min(0.85, Math.max(0.12, activeOps().vWaterEnd / 30));
-      evapDish(ctx, { x: cx - 92, y: H * 0.30, w: 184, h: 48 },
-        { liquid: solColor, level: state.mode === 'guide' ? 0.3 : lvl });
-      steam(ctx, { x: cx - 80, y: H * 0.1, w: 160, h: 90 }, t, 0.75);
+      const bathH = BENCH - H * 0.44;
+      const bath = { x: cx - 150, y: H * 0.44, w: 300, h: bathH };
+      const wallTop = bath.y + bathH * 0.26;        // 与 waterBath() 内部算法一致
+      waterBath(ctx, bath, { steam: 0.7, t, ringW: 190 });
+
+      // 蒸发皿**坐在**套圈上，皿底略嵌进环孔
+      const dishH = H * 0.20, nest = H * 0.02;
+      const lvl = Math.min(0.9, Math.max(0.10, activeOps().vWaterEnd / 30));
+      evapDish(ctx, { x: cx - 95, y: wallTop + nest - dishH, w: 190, h: dishH },
+        { liquid: solColor, level: lvl });
+      steam(ctx, { x: cx - 80, y: wallTop - H * 0.30, w: 160, h: H * 0.26 }, t, 0.75);
       return;
     }
 
     if (key === 'cool') {
-      evapDish(ctx, { x: cx - 100, y: H * 0.42, w: 200, h: 54 },
-        { liquid: ferrousSolutionColor(r.mgFe3 * 0.4), level: 0.34 });
-      crystals(ctx, { x: cx - 96, y: H * 0.5, w: 192, h: 46 }, t,
-        Math.min(1, r.crystallized / 12), { color: MOHR_CRYSTAL_COLOR, spin: false });
-      label2(ctx, '静置自然冷却', cx, H * 0.86, 'var(--faint)');
+      const dishH = H * 0.22;
+      const dbox = { x: cx - 105, y: BENCH - dishH, w: 210, h: dishH };
+      const inner = fitAspect(dbox, 0.28, 'bottom');
+      evapDish(ctx, dbox, { liquid: ferrousSolutionColor(r.mgFe3 * 0.4), level: 0.34 });
+
+      // 晶体长在皿内。皿底是弧的，靠边处很浅——不约束就会掉到皿外面
+      const dishDepth = u0 => {
+        if (u0 <= 0.16 || u0 >= 0.84) return 0.12;
+        if (u0 < 0.32) return (u0 - 0.16) / 0.16;
+        if (u0 > 0.68) return (0.84 - u0) / 0.16;
+        return 1;
+      };
+      crystals(ctx, {
+        x: inner.x + inner.w * 0.10, y: inner.y + inner.h * 0.30,
+        w: inner.w * 0.80, h: inner.h * 0.66,
+      }, t, Math.min(1, r.crystallized / 12),
+      { color: MOHR_CRYSTAL_COLOR, spin: false, depthFn: dishDepth });
+
+      label2(ctx, '静置自然冷却', cx, BENCH + 10, 'var(--faint)');
       return;
     }
 
     if (key === 'suction' || key === 'wash') {
-      const b = buchner(ctx, { x: cx - 65, y: H * 0.14, w: 130, h: H * 0.46 }, {
+      const flH = H * 0.38;
+      const flask = { x: cx - 72, y: BENCH - flH, w: 144, h: flH };
+      suctionFlask(ctx, flask, {
+        liquid: key === 'wash' ? [214, 226, 238, 0.16] : ferrousSolutionColor(r.mgFe3 * 0.4),
+        level: 0.26,
+      });
+
+      // 布氏漏斗的短管插进瓶口
+      const bH = H * 0.44;
+      buchner(ctx, { x: cx - 65, y: flask.y + H * 0.04 - bH, w: 130, h: bH }, {
         liquid: ferrousSolutionColor(r.mgFe3 * 0.4),
         level: key === 'wash' ? 0.3 : 0.5,
         cake: Math.min(1, r.crystallized / 12),
@@ -638,19 +702,20 @@ export function mount(root, params = {}) {
         dropColor: ferrousSolutionColor(r.mgFe3 * 0.4),
         dripping: true,
       });
-      suctionFlask(ctx, { x: cx - 72, y: H * 0.54, w: 144, h: H * 0.4 },
-        { liquid: key === 'wash' ? [214, 226, 238, 0.16] : ferrousSolutionColor(r.mgFe3 * 0.4), level: 0.26 });
-      if (key === 'wash') label2(ctx, '乙醇洗：莫尔盐难溶于乙醇，洗得掉母液，洗不掉产物', cx, H * 0.93, 'var(--w-teal)');
+      if (key === 'wash') {
+        label2(ctx, '乙醇洗：莫尔盐难溶于乙醇，洗得掉母液，洗不掉产物', cx, BENCH + 10, 'var(--w-teal)');
+      }
       return;
     }
 
     if (key === 'dry') {
-      watchGlass(ctx, { x: cx - 130, y: H * 0.34, w: 260, h: H * 0.36 }, {
+      const wH = H * 0.34;
+      watchGlass(ctx, { x: cx - 130, y: BENCH - wH, w: 260, h: wH }, {
         crystal: Math.min(1, r.crystallized / 12),
         crystalColor: MOHR_CRYSTAL_COLOR,
         t,
       });
-      steam(ctx, { x: cx - 60, y: H * 0.28, w: 120, h: 50 }, t, 0.28);
+      steam(ctx, { x: cx - 60, y: BENCH - wH - 46, w: 120, h: 44 }, t, 0.28);
       return;
     }
 
@@ -663,50 +728,64 @@ export function mount(root, params = {}) {
       const tubeW = 48, gap = 24;
       const total = mgs.length * tubeW + (mgs.length + 1) * gap;
       const left = cx - total / 2;
-      const tubeY = H * 0.20, tubeH = H * 0.50;
 
-      // 白色背板——目视比色必须在白背景下看，
+      // 白背板坐在台面上——目视比色必须在白背景下看，
       // 深色底会把浅色溶液衬成灰的，那就不是比色了。
+      const cardH = H * 0.66;
+      const cardY = BENCH - H * 0.03 - cardH;
+      const bx = left + gap * 0.35, bw = total - gap * 0.7;
+
       ctx.save();
       ctx.fillStyle = 'rgba(244,247,250,0.97)';
-      const bx = left + gap * 0.35, by = H * 0.13;
-      const bw = total - gap * 0.7, bh = H * 0.72;
-      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 6); ctx.fill(); }
-      else ctx.fillRect(bx, by, bw, bh);
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, cardY, bw, cardH, 6); ctx.fill(); }
+      else ctx.fillRect(bx, cardY, bw, cardH);
       ctx.restore();
+
+      // 管身与标注都排在卡片内
+      const tubeY = cardY + cardH * 0.13;
+      const tubeH = cardH * 0.56;
+      const labY = cardY + cardH * 0.76;
 
       for (let i = 0; i < mgs.length; i++) {
         const x = left + gap + i * (tubeW + gap);
         comparisonTube(ctx, { x, y: tubeY, w: tubeW, h: tubeH },
           { liquid: thiocyanateColor(mgs[i]), level: 0.60 });
-        label2(ctx, names[i], x + tubeW / 2, H * 0.755,
+        label2(ctx, names[i], x + tubeW / 2, labY,
           isSample(i) ? 'var(--w-green)' : 'var(--faint)');
-        label2(ctx, mgs[i] === 0 ? '—' : `${mgs[i].toFixed(3)} mg`, x + tubeW / 2, H * 0.755 + 16,
+        label2(ctx, mgs[i] === 0 ? '—' : `${mgs[i].toFixed(3)} mg`, x + tubeW / 2, labY + 15,
           isSample(i) ? 'var(--w-green)' : 'var(--dim)');
       }
       return;
     }
 
     if (key === 'result' || key === 'bench') {
-      // 练习模式的定格画面：全景 + 结果
+      // 练习模式的定格画面：抽滤得到的晶体 + 称重
       if (state.ran) {
-        buchner(ctx, { x: cx - 62, y: H * 0.13, w: 124, h: H * 0.47 }, {
+        const flH = H * 0.38;
+        const flask = { x: cx - 78, y: BENCH - flH, w: 156, h: flH };
+        suctionFlask(ctx, flask, { liquid: ferrousSolutionColor(r.mgFe3 * 0.4), level: 0.24 });
+        const bH = H * 0.44;
+        buchner(ctx, { x: cx - 70, y: flask.y + H * 0.04 - bH, w: 140, h: bH }, {
           cake: Math.min(1, r.crystallized / 12), cakeColor: MOHR_CRYSTAL_COLOR,
         });
-        suctionFlask(ctx, { x: cx - 68, y: H * 0.48, w: 136, h: H * 0.36 },
-          { liquid: ferrousSolutionColor(r.mgFe3 * 0.4), level: 0.24 });
-        balance(ctx, { x: cx + 150, y: H * 0.42, w: 190, h: H * 0.42 }, {
-          item: true, itemColor: MOHR_CRYSTAL_COLOR,
+
+        const bh = H * 0.44;
+        const bbox = { x: cx + 96, y: BENCH - bh, w: 196, h: bh };
+        balance(ctx, bbox, {
           reading: r.mYield.toFixed(2), tone: r.yieldFrac > 0.6 ? 'good' : 'warn',
         });
-        label2(ctx, '抽滤得到的晶体', cx, H * 0.9, 'var(--faint)');
+        const panY = bbox.y + bh * 0.16;
+        crystals(ctx, { x: cx + 130, y: panY - 14, w: 128, h: 12 }, t,
+          Math.min(1, r.mYield / 13), { color: MOHR_CRYSTAL_COLOR, spin: false });
+        label2(ctx, '抽滤得到的晶体', cx - 78, BENCH + 10, 'var(--faint)');
         return;
       }
       // 未运行：空实验台
-      conicalFlask(ctx, { x: cx - 150, y: H * 0.22, w: 120, h: H * 0.56 }, { liquid: CLEAR_COLOR, level: 0.1 });
-      evapDish(ctx, { x: cx - 20, y: H * 0.5, w: 150, h: 40 }, {});
-      buchner(ctx, { x: cx + 95, y: H * 0.22, w: 104, h: H * 0.44 }, {});
-      label2(ctx, '定好每一项操作，然后运行实验', cx, H * 0.9, 'var(--faint)');
+      conicalFlask(ctx, { x: cx - 190, y: BENCH - H * 0.52, w: 118, h: H * 0.52 },
+        { liquid: CLEAR_COLOR, level: 0.1 });
+      evapDish(ctx, { x: cx - 46, y: BENCH - H * 0.22, w: 150, h: H * 0.22 }, {});
+      buchner(ctx, { x: cx + 92, y: BENCH - H * 0.42, w: 112, h: H * 0.42 }, {});
+      label2(ctx, '定好每一项操作，然后运行实验', cx, BENCH + 12, 'var(--faint)');
       return;
     }
   }
