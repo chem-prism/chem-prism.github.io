@@ -27,14 +27,16 @@ import * as aas from './sims/aas.js';
 import * as gravimetry from './sims/gravimetry.js';
 import * as qcchart from './sims/qcchart.js';
 import * as ms from './sims/ms.js';
+import * as mohrSalt from './sims/mohr-salt.js';
 
 // 顺序 = 左栏显示顺序，按分析化学的知识脉络编排：
-//   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理
+//   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理 → 课程实验
+// 最后一个是「过程型」模拟器，还原课程里的完整操作链，与前面的参数型不同类。
 const SIMS = [
   titration, distribution, edta, complexometry, redox, precipitate,
   potentiometry, spectrophotometry, ir, aas, ms,
   chromatography, extraction, gravimetry, molecule3d,
-  qcchart, precision, propagation,
+  qcchart, precision, propagation, mohrSalt,
 ];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
 

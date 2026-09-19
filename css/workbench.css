@@ -379,8 +379,106 @@ textarea { resize: vertical; min-height: 62px; line-height: 1.6; font-family: va
 .bench.single { grid-template-columns: minmax(240px, 420px); }
 .bench.single .bench-particles { height: 200px; }
 
+/* 过程型模拟器：装置图要占主导，粒子视图只作陪衬 */
+.bench-wide { grid-template-columns: 1fr minmax(170px, 250px); }
+.bench-wide .bench-cell { height: 340px; }
+
 @media (max-width: 720px) {
   .bench { grid-template-columns: 1fr; }
   .bench-beaker { height: 200px; }
   .bench-particles { height: 190px; }
+  .bench-wide .bench-cell { height: 250px; }
 }
+
+/* ---------- 过程型模拟器：模式切换与步骤 ---------- */
+.mode-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.mode-tab {
+  display: flex; flex-direction: column; gap: 3px;
+  text-align: left; cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 11px 14px;
+  color: var(--dim);
+  font-family: var(--sans);
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.mode-tab:hover { border-color: var(--edge); }
+.mode-tab b { font-size: 13.5px; color: var(--text); font-weight: 600; }
+.mode-tab small { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.mode-tab.on {
+  background: color-mix(in srgb, var(--accent) 9%, var(--sunken));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.mode-tab.on b { color: var(--accent); }
+
+/* 步骤条 */
+.step-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.step-chip {
+  width: 27px; height: 27px; flex: none;
+  border-radius: 50%;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--mono); font-size: 11px;
+  cursor: pointer;
+  transition: all .16s var(--ease);
+}
+.step-chip:hover { border-color: var(--edge); color: var(--dim); }
+.step-chip.done { color: var(--dim); border-color: var(--edge); }
+.step-chip.done::after { content: ''; }
+.step-chip.on {
+  background: color-mix(in srgb, var(--accent) 20%, var(--sunken));
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.step-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; flex-wrap: wrap; }
+.step-head b { font-family: var(--serif); font-size: 17px; font-weight: 700; }
+.step-idx {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 3px; padding: 1px 6px;
+}
+.step-op { font-size: 13.5px; line-height: 1.75; color: var(--text); }
+.step-why {
+  margin-top: 10px; padding: 10px 13px;
+  border-left: 2px solid var(--edge);
+  background: var(--sunken);
+  border-radius: 0 var(--r) var(--r) 0;
+  font-size: 12.5px; line-height: 1.8; color: var(--dim);
+}
+.step-why-tag {
+  display: inline-block; margin-right: 8px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  color: var(--w-amber);
+}
+.step-why b { color: var(--text); }
+
+/* 符号层 */
+.eq-line {
+  font-family: var(--mono); font-size: 14px;
+  color: var(--text); letter-spacing: .01em;
+  padding: 8px 0 4px;
+}
+.eq-line sub, .eq-line sup { font-size: .72em; }
+.calc-line {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--dim); line-height: 1.9;
+  border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px;
+}
+
+/* 练习模式未运行时的空态 */
+.idle-note {
+  border: 1px dashed var(--edge);
+  border-radius: var(--r);
+  padding: 22px 18px;
+  text-align: center;
+  color: var(--faint); font-size: 13px;
+}
+
+/* 练习模式复盘清单 */
+.review-list { margin: 8px 0 0; padding-left: 18px; line-height: 1.9; }
+.review-list li { color: var(--dim); }
+.review-list b { color: var(--w-amber); }

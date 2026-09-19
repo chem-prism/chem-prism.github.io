@@ -628,3 +628,262 @@ export function endpointFromDerivative(deriv) {
 
 /** pH 电极的两点校正：斜率检查（mV/pH） */
 export const electrodeSlope = (E1, E2, ph1, ph2) => (E2 - E1) / (ph2 - ph1);
+
+/* ============================================================
+ * 制备实验：硫酸亚铁铵（摩尔盐）
+ *
+ * 数据来源 —— 本课程《实验四十 硫酸亚铁铵的制备》课件：
+ *   · 溶解度表（第 6 页原表）。注意莫尔盐一行 **0 ℃ 格为空白**，
+ *     数值自 10 ℃ 起；硫酸铵一行 50 ℃ 格为空白。此处照原表录入。
+ *   · 配料：2 g 铁粉 / 15 mL 3 mol·L⁻¹ H₂SO₄ / 4.5 g (NH₄)₂SO₄
+ *   · 目视比色标准色阶：Ⅰ 0.050 mg、Ⅱ 0.10 mg、Ⅲ 0.20 mg
+ *     （均为每 1.0 g 产品中 Fe³⁺ 的量）
+ *
+ * 本节的量热力学量（溶解度、摩尔质量）可脱离浏览器验算；
+ * 氧化分数是**教学标定模型**，见该函数注释。
+ * ============================================================ */
+
+/** 相对原子质量（IUPAC 2021），供与教材附录核对 */
+export const AR = { H: 1.008, N: 14.007, O: 15.999, S: 32.065, Fe: 55.845 };
+
+const M_FESO4 = AR.Fe + AR.S + 4 * AR.O;                        // 151.906
+const M_AS = 2 * AR.N + 8 * AR.H + AR.S + 4 * AR.O;             // 132.139
+const M_H2O = 2 * AR.H + AR.O;                                  // 18.015
+
+export const M_MOHR = M_FESO4 + M_AS + 6 * M_H2O;               // 392.14
+export const M_FESO4_7H2O = M_FESO4 + 7 * M_H2O;                // 278.01
+export const M_AMMONIUM_SULFATE = M_AS;                         // 132.14
+export const M_FERROUS_SULFATE = M_FESO4;                       // 151.91
+
+/** 溶解度 / (g 物质 · 100 g⁻¹ 水) —— 课件原表 */
+export const SOLUBILITY = {
+  mohr:  [[10, 12.5], [20, 21.6], [30, 28.1], [40, 33.0], [50, 40.0]],
+  feso4: [[0, 15.65], [10, 20.51], [20, 26.5], [30, 32.9], [40, 40.2], [50, 48.6]],
+  as:    [[0, 70.6], [10, 73.0], [20, 75.4], [30, 78.0], [40, 81.0], [60, 88.0]],
+};
+
+/**
+ * 溶解度的分段线性插值。
+ *
+ * 表格只覆盖 10–60 ℃，而实验要在 90 ℃ 以上（趁热过滤）和 100 ℃（水浴蒸发）
+ * 取值，因此默认**线性外推**。外推段是估计值，不是实测——但它决定的行为
+ * （热的时候什么都溶得下、冷下来大量析出）是稳健的。
+ */
+export function solubilityAt(key, T, { extrapolate = true } = {}) {
+  const tbl = SOLUBILITY[key];
+  if (!tbl || !tbl.length) return NaN;
+  const [t0, s0] = tbl[0];
+  const [tN, sN] = tbl[tbl.length - 1];
+
+  if (T < t0) {
+    if (!extrapolate) return s0;
+    const [a, b] = tbl[1];
+    return Math.max(0, s0 + (b - s0) * (T - t0) / (a - t0));
+  }
+  if (T > tN) {
+    if (!extrapolate) return sN;
+    const [a, b] = tbl[tbl.length - 2];
+    return sN + (sN - b) * (T - tN) / (tN - a);
+  }
+  for (let i = 1; i < tbl.length; i++) {
+    if (T <= tbl[i][0]) {
+      const [ta, sa] = tbl[i - 1], [tb, sb] = tbl[i];
+      return sa + (sb - sa) * (T - ta) / (tb - ta);
+    }
+  }
+  return sN;
+}
+
+/**
+ * 趁热过滤时 FeSO₄ 的损失 / g。
+ *
+ * 不引经验系数，直接用课件溶解度表算：
+ * 把溶液里的 FeSO₄ 折成 FeSO₄·7H₂O，比较它在过滤温度下的溶解能力，
+ * 超出的部分就是结晶在滤纸上、随后被当作残渣弃去的量。
+ *
+ * 教材为什么再三强调「趁热」：这个函数一跑就明白了。
+ */
+export function feso4LossOnFilter({ mFeSO4, vWater, T }) {
+  const asHeptahydrate = mFeSO4 * M_FESO4_7H2O / M_FESO4;
+  const canHold = solubilityAt('feso4', Math.max(T, 0)) * vWater / 100;
+  const crystallized = Math.max(0, asHeptahydrate - canHold);
+  return crystallized * M_FESO4 / M_FESO4_7H2O;
+}
+
+/**
+ * 蒸发浓缩后冷却结晶的物料衡算。
+ *   留在母液里的 = min(待结晶总量, 溶解度 × 剩余水)
+ *
+ * 这一条同时给出两个方向的错误：蒸发不足 → 母液带走太多；
+ * 蒸发过头 → 产率上去了，但杂质也被浓缩（见 mohrPrep 的 impurity 项）。
+ */
+export function crystallize({ mSolute, vWater, T }) {
+  const s = solubilityAt('mohr', T);           // g / 100 g 水
+  const dissolved = Math.min(mSolute, s * vWater / 100);
+  return { dissolved, crystal: mSolute - dissolved, solubility: s };
+}
+
+/**
+ * Fe²⁺ 被空气氧化的分数 —— **教学标定模型**。
+ *
+ *     4Fe²⁺ + O₂ + 4H⁺ → 4Fe³⁺ + 2H₂O
+ *
+ * 方向依据是课件里的注意事项：温度越高、暴露越久、酸度越低，氧化越严重
+ * （「在制备过程中应使溶液保持较强的酸性，以免 Fe²⁺ 发生水解和氧化」）。
+ *
+ * ⚠️ 系数是标定出来的，**不是动力学实测值**。它只保证：
+ *   ① 单调方向正确；② 量级落在课件标准色阶能分辨的范围内
+ *   （Ⅰ/Ⅱ/Ⅲ 级的分界分别在 3.5×10⁻⁴、7.0×10⁻⁴、1.4×10⁻³）。
+ * 按教材用量、规范操作时，这个模型给出 ~2×10⁻⁴，即Ⅰ级。
+ */
+export function fe2OxidizedFraction({ minutes = 10, T = 100, cH = 0.6, exposed = 1 }) {
+  const kT = Math.exp((T - 100) / 45);           // 100 ℃ 归一
+  const kAcid = 1 / (1 + Math.max(cH, 0));       // 游离酸越多，氧化越慢
+  const kAir = 0.35 + 0.65 * Math.min(Math.max(exposed, 0), 1);
+  return Math.min(0.05, 3.2e-5 * minutes * kT * kAcid * kAir);
+}
+
+/** 每 1.0 g 产品中 Fe³⁺ 的质量 / mg */
+export const fe3MgPerGram = frac => frac * (1000 / M_MOHR) * AR.Fe;
+
+/** 目视比色的标准色阶 —— 课件给定，单位 mg Fe³⁺ / 1.0 g 产品 */
+export const FE3_GRADES = [
+  { grade: 'Ⅰ', mg: 0.050 },
+  { grade: 'Ⅱ', mg: 0.100 },
+  { grade: 'Ⅲ', mg: 0.200 },
+];
+
+/** 由 Fe³⁺ 含量判定试剂级别；超过Ⅲ级色阶记为不合格 */
+export function fe3Grade(mgPerG) {
+  for (const g of FE3_GRADES) if (mgPerG <= g.mg) return g.grade;
+  return '不合格';
+}
+
+/**
+ * 硫酸亚铁铵制备的全流程物料衡算。
+ *
+ * 依次做五件事，每步的损失单独记下来，界面才能把
+ * 「产量低是低在哪一步」摊开讲：
+ *   ① 配料      —— 酸够不够、谁是限制试剂
+ *   ② 氧化      —— Fe³⁺ 不参与成盐，直接扣掉，同时决定试剂级别
+ *   ③ 趁热过滤  —— 温度低则 FeSO₄·7H₂O 析出在滤纸上
+ *   ④ 蒸发结晶  —— 母液带走的那部分不算产量
+ *   ⑤ 转移洗涤  —— 固定比例的机械损失
+ */
+export function mohrPrep({
+  mFe = 2, vAcid = 15, cAcid = 3, mAS = 4.5,
+  Tfilter = 90, vWaterFilter = 15,
+  vWaterEnd = 10, Tcool = 20,
+  boilMinutes = 10, Tboil = 100, exposed = 1,
+  washes = 2, washLossPerWash = 0.02,
+} = {}) {
+  /* ① 配料 */
+  const nFe = mFe / AR.Fe;
+  const nAcid = (vAcid / 1000) * cAcid;
+  const nAS = mAS / M_AMMONIUM_SULFATE;
+  const nFeDissolved = Math.min(nFe, nAcid);          // 酸不足则铁溶不完
+  const cH = nAcid > nFeDissolved ? (nAcid - nFeDissolved) / (vWaterFilter / 1000) : 0;
+  // 三件事都可能卡住产量，得说清是哪一件
+  const limiting = nAcid < nFe ? '硫酸（不足，铁没溶完）'
+    : nAS <= nFe ? '硫酸铵' : '铁粉';
+  const mTheo = Math.min(nFeDissolved, nAS) * M_MOHR;
+
+  /* ② 氧化 —— 顺带定出试剂级别 */
+  const oxidizedFrac = fe2OxidizedFraction({ minutes: boilMinutes, T: Tboil, cH, exposed });
+  const mgFe3 = fe3MgPerGram(oxidizedFrac);
+  const nAfterOxidation = nFeDissolved * (1 - oxidizedFrac);
+
+  /* ③ 趁热过滤 */
+  const mFeSO4 = nAfterOxidation * M_FESO4;
+  const mFeSO4LostFilter = feso4LossOnFilter({ mFeSO4, vWater: vWaterFilter, T: Tfilter });
+  const nFeSO4Left = Math.max(0, (mFeSO4 - mFeSO4LostFilter) / M_FESO4);
+  const nProduct = Math.min(nFeSO4Left, nAS);
+  const mProduct = nProduct * M_MOHR;
+
+  /* ④ 蒸发结晶 */
+  const crys = crystallize({ mSolute: mProduct, vWater: vWaterEnd, T: Tcool });
+
+  /* ⑤ 转移与洗涤 */
+  const transferLoss = 0.03;
+  const washLoss = Math.max(0, washes) * washLossPerWash;
+  const keep = (1 - transferLoss) * (1 - washLoss);
+
+  /**
+   * 蒸发过头的代价是暴沸溅失。
+   * 讲义要求「蒸发至出现固体薄膜」，再往下烧就贴近干涸，
+   * 局部过热会暴沸把料液溅到皿壁上——溅上去的那部分收不回来。
+   * 6 mL 以下开始计，越少越严重，到 1 mL 时约溅失三成。
+   */
+  const splashLoss = vWaterEnd >= 6 ? 0 : Math.min(0.32, 0.32 * (6 - vWaterEnd) / 5);
+  const mYield = crys.crystal * keep * (1 - splashLoss);
+
+  return {
+    // 配料
+    nFe, nAcid, nAS, nFeDissolved, limiting,
+    acidExcess: nAcid - nFe,
+    cH,
+    // 级别
+    oxidizedFrac, mgFe3, grade: fe3Grade(mgFe3),
+    // 产量
+    mTheo, mProduct, mYield,
+    yieldFrac: mTheo > 0 ? mYield / mTheo : 0,
+    // 结晶
+    crystallized: crys.crystal,
+    motherLiquor: crys.dissolved,
+    solubilityAtCool: crys.solubility,
+    // 逐项损失 / g（按 FeSO₄ 或产物计，见各键注释）
+    loss: {
+      unreactedFe: Math.max(0, nFe - nFeDissolved) * M_FESO4,   // 铁没溶完
+      oxidation: nFeDissolved * oxidizedFrac * M_FESO4,         // 氧化成 Fe³⁺
+      filter: mFeSO4LostFilter,                                // 滤纸上析出
+      motherLiquor: crys.dissolved,                            // 留在母液
+      handling: crys.crystal * (1 - keep),                     // 转移与洗涤
+      splash: crys.crystal * keep * splashLoss,                // 暴沸溅失
+    },
+    splashLoss,
+    /** 界面读数用：把 Fe³⁺ 折算成「比色时的颜色深浅」相对值 */
+    colorIndex: mgFe3 / FE3_GRADES[2].mg,
+  };
+}
+
+/**
+ * 目视比色：硫氰酸铁配合物的溶液颜色。
+ *
+ *      Fe³⁺ + nSCN⁻ = [Fe(SCN)ₙ]³⁻ⁿ      （血红色）
+ *
+ * 用 Beer–Lambert 算，而不是拍一条渐变：
+ * 血红色配合物主要吸收蓝绿光、让红光透过，三通道吸收系数不同，
+ * 所以低浓度时是淡粉、高浓度才压成深红——这正好解释了
+ * 「为什么必须拿标准色阶比，而不能靠眼睛估」。
+ *
+ * ⚠️ 比色必须在**白色背景**下观察。画布底色是深色时，
+ * 浅色溶液会被衬成灰的，看上去完全不像红色。
+ *
+ * 返回不透明的 [r,g,b,1]。
+ */
+export function thiocyanateColor(mgFe3) {
+  const A = Math.max(0, mgFe3) / 0.30;        // 以 0.30 mg 为 A = 1 的参照
+  const k = [0.15, 0.90, 0.85];               // R / G / B 三通道吸收系数
+  return [
+    Math.round(Math.max(0, Math.min(255, 255 * Math.pow(10, -A * k[0])))),
+    Math.round(Math.max(0, Math.min(255, 255 * Math.pow(10, -A * k[1])))),
+    Math.round(Math.max(0, Math.min(255, 255 * Math.pow(10, -A * k[2])))),
+    1,
+  ];
+}
+
+/**
+ * KMnO₄ 滴定 Fe²⁺（实验四十之二）的化学计量。
+ *      MnO₄⁻ + 5Fe²⁺ + 8H⁺ → Mn²⁺ + 5Fe³⁺ + 4H₂O
+ */
+export function permanganateTitration({ mSample, purity = 1, cKMnO4, vKMnO4 }) {
+  const nSample = (mSample / M_MOHR) * purity;          // 试样中莫尔盐的物质的量
+  const nFe2 = nSample;                                 // 每摩尔莫尔盐含 1 mol Fe²⁺
+  const nMnO4 = (vKMnO4 / 1000) * cKMnO4;
+  const nFe2Titrated = 5 * nMnO4;
+  return {
+    nFe2, nMnO4, nFe2Titrated,
+    vTheo: (nFe2 / 5) / cKMnO4 * 1000,                  // 理论消耗体积 / mL
+    wFe2: nFe2 * AR.Fe / (mSample / 1000),              // 以质量分数表示的 Fe²⁺ 含量
+  };
+}

@@ -12,7 +12,7 @@ import { resolveColor } from './chart.js';
 
 const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
 
-function fit(canvas) {
+export function fit(canvas) {
   const dpr = DPR();
   const w = canvas.clientWidth, h = canvas.clientHeight;
   if (!w || !h) return null;
