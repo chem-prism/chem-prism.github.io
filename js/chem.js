@@ -772,25 +772,42 @@ export function fe3Grade(mgPerG) {
  */
 export function mohrPrep({
   mFe = 2, vAcid = 15, cAcid = 3, mAS = 4.5,
-  Tfilter = 90, vWaterFilter = 15,
+  Tfilter = 90, vWaterFilter = 25,
   vWaterEnd = 10, Tcool = 20,
   boilMinutes = 10, Tboil = 100, exposed = 1,
   washes = 2, washLossPerWash = 0.02,
 } = {}) {
+  const inputs = { mFe, vAcid, cAcid, mAS, Tfilter, vWaterFilter,
+    vWaterEnd, Tcool, boilMinutes, Tboil, exposed, washes, washLossPerWash };
+  if (Object.values(inputs).some(v => !Number.isFinite(v)) ||
+      [mFe, vAcid, cAcid, mAS, vWaterFilter, vWaterEnd].some(v => v <= 0) ||
+      boilMinutes < 0 || washes < 0 || washLossPerWash < 0 ||
+      Tcool < 0 || Tcool > 50 || Tfilter < 0 || Tfilter > 100 ||
+      Tboil < 20 || Tboil > 160 || exposed < 0 || exposed > 1) {
+    throw new RangeError('制备参数超出教学模型范围');
+  }
   /* ① 配料 */
   const nFe = mFe / AR.Fe;
   const nAcid = (vAcid / 1000) * cAcid;
   const nAS = mAS / M_AMMONIUM_SULFATE;
-  const nFeDissolved = Math.min(nFe, nAcid);          // 酸不足则铁溶不完
-  const cH = nAcid > nFeDissolved ? (nAcid - nFeDissolved) / (vWaterFilter / 1000) : 0;
+  // Teaching calibration, NOT measured Fe dissolution kinetics.
+  // At 100 C ten minutes completes the model reaction; cooler/shorter runs leave Fe.
+  const reactionCompletion = Math.min(1, boilMinutes / (10 * Math.exp((100 - Math.min(Tboil, 100)) / 30)));
+  const nFeDissolved = Math.min(nFe, nAcid) * reactionCompletion;
+  // Acid excess concentration, not an exact [H+] solution of bisulfate equilibria.
+  // The heating stage is held near 15 mL, before dilution for filtration (slide 13).
+  const cH = Math.max(0, nAcid - nFeDissolved) / (vAcid / 1000);
   // 三件事都可能卡住产量，得说清是哪一件
   const limiting = nAcid < nFe ? '硫酸（不足，铁没溶完）'
     : nAS <= nFe ? '硫酸铵' : '铁粉';
-  const mTheo = Math.min(nFeDissolved, nAS) * M_MOHR;
+  const mTheo = Math.min(nFe, nAcid, nAS) * M_MOHR;
 
   /* ② 氧化 —— 顺带定出试剂级别 */
   const oxidizedFrac = fe2OxidizedFraction({ minutes: boilMinutes, T: Tboil, cH, exposed });
-  const mgFe3 = fe3MgPerGram(oxidizedFrac);
+  // Trace carryover is independently calibrated. Washing affects the retained
+  // mother-liquor film; this is not a prediction of solid/liquid partitioning.
+  const impurityRetention = Math.exp((2 - washes) * 0.55);
+  const mgFe3Estimate = fe3MgPerGram(oxidizedFrac) * impurityRetention;
   const nAfterOxidation = nFeDissolved * (1 - oxidizedFrac);
 
   /* ③ 趁热过滤 */
@@ -805,7 +822,7 @@ export function mohrPrep({
 
   /* ⑤ 转移与洗涤 */
   const transferLoss = 0.03;
-  const washLoss = Math.max(0, washes) * washLossPerWash;
+  const washLoss = Math.min(1, Math.max(0, washes) * washLossPerWash);
   const keep = (1 - transferLoss) * (1 - washLoss);
 
   /**
@@ -816,14 +833,27 @@ export function mohrPrep({
    */
   const splashLoss = vWaterEnd >= 6 ? 0 : Math.min(0.32, 0.32 * (6 - vWaterEnd) / 5);
   const mYield = crys.crystal * keep * (1 - splashLoss);
+  const mgFe3 = mYield > 1e-9 ? mgFe3Estimate : null;
+  // All entries below use the SAME unit, grams of Mohr-salt equivalent.
+  const afterReaction = Math.min(nFeDissolved, nAS) * M_MOHR;
+  const afterOxidation = Math.min(nAfterOxidation, nAS) * M_MOHR;
+  const lossProduct = {
+    reaction: Math.max(0, mTheo - afterReaction),
+    oxidation: Math.max(0, afterReaction - afterOxidation),
+    filtration: Math.max(0, afterOxidation - mProduct),
+    motherLiquor: crys.dissolved,
+    handling: crys.crystal * (1 - keep),
+    splash: crys.crystal * keep * splashLoss,
+  };
 
   return {
     // 配料
-    nFe, nAcid, nAS, nFeDissolved, limiting,
+    nFe, nAcid, nAS, nFeDissolved, nAfterOxidation, nFeSO4Left, nProduct,
+    reactionCompletion, limiting, lossProduct,
     acidExcess: nAcid - nFe,
     cH,
     // 级别
-    oxidizedFrac, mgFe3, grade: fe3Grade(mgFe3),
+    oxidizedFrac, mgFe3, grade: mgFe3 === null ? '无产品' : fe3Grade(mgFe3),
     // 产量
     mTheo, mProduct, mYield,
     yieldFrac: mTheo > 0 ? mYield / mTheo : 0,
@@ -833,16 +863,16 @@ export function mohrPrep({
     solubilityAtCool: crys.solubility,
     // 逐项损失 / g（按 FeSO₄ 或产物计，见各键注释）
     loss: {
-      unreactedFe: Math.max(0, nFe - nFeDissolved) * M_FESO4,   // 铁没溶完
-      oxidation: nFeDissolved * oxidizedFrac * M_FESO4,         // 氧化成 Fe³⁺
-      filter: mFeSO4LostFilter,                                // 滤纸上析出
+      unreactedFe: Math.max(0, nFe - nFeDissolved) * M_MOHR,    // 以莫尔盐当量表示
+      oxidation: Math.max(0, afterReaction - afterOxidation),
+      filter: mFeSO4LostFilter * M_MOHR / M_FESO4,             // 换算为莫尔盐当量
       motherLiquor: crys.dissolved,                            // 留在母液
       handling: crys.crystal * (1 - keep),                     // 转移与洗涤
       splash: crys.crystal * keep * splashLoss,                // 暴沸溅失
     },
     splashLoss,
     /** 界面读数用：把 Fe³⁺ 折算成「比色时的颜色深浅」相对值 */
-    colorIndex: mgFe3 / FE3_GRADES[2].mg,
+    colorIndex: mgFe3 === null ? 0 : mgFe3 / FE3_GRADES[2].mg,
   };
 }
 
@@ -872,6 +902,262 @@ export function thiocyanateColor(mgFe3) {
   ];
 }
 
+/* ============================================================
+ * 课程实验：气体、动力学与滴定操作
+ *
+ * 下列函数是过程型模拟器的纯计算内核。动力学计时和操作误差
+ * 使用教学标定模型，明确不是实测数据；计量关系、状态方程、
+ * 稀释和滴定化学计量则按课件原式计算。
+ * ============================================================ */
+
+export const R_GAS = 8.314462618;
+export const M_MG = 24.305;
+
+/** 置换法测 Mg 摩尔质量：湿氢气必须扣除饱和水蒸气分压。 */
+export function magnesiumMolarMass({
+  // 默认示例：0.0319 g、量气管净读数 33.10 mL；按 25 ℃、
+  // 98.16 kPa 的湿氢气计算，结果约为 24.3 g/mol。
+  mMg = 0.0319,
+  vInitial = 2.00,
+  vFinal = 35.10,
+  temperatureC = 25.0,
+  pressureKPa = 101.325,
+  waterVaporKPa = 3.17,
+  waterLevelDeltaCm = 0,
+  useWaterVaporCorrection = true,
+} = {}) {
+  // 量气管读数以 mL 给出，状态方程必须换成 m³；mMg 保持 g，
+  // 这样最后用 g / mol 返回摩尔质量。
+  const vL = (vFinal - vInitial) / 1e6;
+  const T = temperatureC + 273.15;
+  const headCorrectionKPa = waterLevelDeltaCm * 0.0980665;
+  const dryGasPressureKPa = pressureKPa - waterVaporKPa + headCorrectionKPa;
+  const pH2KPa = useWaterVaporCorrection ? dryGasPressureKPa : pressureKPa + headCorrectionKPa;
+  const pH2 = pH2KPa * 1000;
+  if (![mMg, vInitial, vFinal, temperatureC, pressureKPa, waterVaporKPa]
+    .every(Number.isFinite) || !Number.isFinite(waterLevelDeltaCm) ||
+    vL <= 0 || T <= 0 || pH2 <= 0) {
+    throw new RangeError('量气法参数无效');
+  }
+  const nH2 = pH2 * vL / (R_GAS * T);
+  const nH2WithoutVaporCorrection =
+    (pressureKPa + headCorrectionKPa) * 1000 * vL / (R_GAS * T);
+  return {
+    vH2: vL,
+    T,
+    pH2,
+    pH2KPa,
+    headCorrectionKPa,
+    nH2,
+    molarMass: mMg / nH2,
+    errorPct: (mMg / nH2 - M_MG) / M_MG * 100,
+    nH2WithoutVaporCorrection,
+    directAtmosphereMass: mMg / nH2WithoutVaporCorrection,
+    vaporCorrectionApplied: useWaterVaporCorrection,
+  };
+}
+
+/** 两份镁带平行测定的平均值与相对偏差。 */
+export function magnesiumDuplicate(runs) {
+  if (!Array.isArray(runs) || runs.length < 2 ||
+      runs.some(r => !r || !Number.isFinite(r.molarMass))) {
+    throw new RangeError('至少需要两次有效的镁摩尔质量测定');
+  }
+  const values = runs.map(r => r.molarMass);
+  const average = mean(values);
+  return {
+    values,
+    average,
+    range: Math.max(...values) - Math.min(...values),
+    relativeRangePct: average ? (Math.max(...values) - Math.min(...values)) / average * 100 : Infinity,
+  };
+}
+
+/**
+ * 反应级数实验的教学标定模型。
+ *
+ * 课件给出 2.60 mL 总体积和 Na2S2O3 的 1:2 计量关系，
+ * 但 Δt 表为空表。因此只用一个可解释的 Arrhenius/幂律模型
+ * 生成方向正确、量级合理的教学读数。
+ */
+export function kineticRun({
+  kiVolume = 1.00,
+  persulfateVolume = 1.00,
+  thioVolume = 0.40,
+  totalVolume = 2.60,
+  temperatureC = 25,
+  ionicStrengthFixed = true,
+  persulfateAddedLast = true,
+  additionDelayS = 0,
+  mixing = 1,
+  calibrationTime = 82,
+  activationEnergy = 50000,
+} = {}) {
+  const cKI = 0.20 * kiVolume / totalVolume;
+  const cS2O8 = 0.20 * persulfateVolume / totalVolume;
+  const cS2O3 = 0.010 * thioVolume / totalVolume;
+  const deltaS2O8 = cS2O3 / 2;
+  const T = temperatureC + 273.15;
+  const refT = 298.15;
+  const refC = 0.20 / 2.60;
+  const orderFactor = Math.pow(Math.max(cS2O8, 1e-9) / refC, 1) *
+    Math.pow(Math.max(cKI, 1e-9) / refC, 1);
+  const ionicFactor = ionicStrengthFixed ? 1 : Math.max(0.35, 1 - 0.8 * Math.abs(
+    (kiVolume + 2 * persulfateVolume) / totalVolume - 0.77));
+  const arrhenius = Math.exp((activationEnergy / 8.314462618) * (1 / T - 1 / refT));
+  const mixingFactor = Math.max(0.55, Number(mixing) || 1);
+  const handlingFactor = (persulfateAddedLast ? 1 : 1.12) *
+    (1 + Math.max(0, additionDelayS) / 20);
+  const time = calibrationTime * arrhenius * handlingFactor /
+    Math.max(orderFactor * ionicFactor * mixingFactor, 1e-6);
+  const rate = deltaS2O8 / time;
+  const rateConstant = rate / Math.max(cS2O8 * cKI, 1e-12);
+  return {
+    cKI, cS2O8, cS2O3, deltaS2O8, temperatureK: T,
+    time, rate, rateConstant, ionicFactor, ionicStrengthFixed,
+    persulfateAddedLast, additionDelayS, mixing,
+    model: true,
+  };
+}
+
+export function kineticOrderFromRuns(runs, key = 'cS2O8') {
+  if (!Array.isArray(runs) || runs.length < 2) throw new RangeError('至少需要两组动力学数据');
+  const xs = runs.map(r => Math.log10(r[key]));
+  const ys = runs.map(r => Math.log10(r.rate));
+  const mx = mean(xs), my = mean(ys);
+  const slope = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) /
+    xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  return { order: slope, intercept: my - slope * mx };
+}
+
+export function arrheniusFit(runs) {
+  if (!Array.isArray(runs) || runs.length < 2) throw new RangeError('至少需要两组温度数据');
+  const xs = runs.map(r => 1 / r.temperatureK);
+  const ys = runs.map(r => -Math.log10(r.rateConstant ?? r.rate));
+  const mx = mean(xs), my = mean(ys);
+  const slope = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) /
+    xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  return { slope, activationEnergy: slope * 2.303 * R_GAS };
+}
+
+/** KMnO4 标定：2 MnO4- : 5 C2O4^2-. */
+export function permanganateStandardization({
+  mNa2C2O4 = 0.165,
+  oxalateVolume = 250.00,
+  aliquot = 25.00,
+  vKMnO4 = 24.65,
+} = {}) {
+  const M_NA2C2O4 = 134.00;
+  const nOxTotal = mNa2C2O4 / M_NA2C2O4;
+  const cOx = nOxTotal / (oxalateVolume / 1000);
+  const nOxAliquot = cOx * aliquot / 1000;
+  const nMn = (2 / 5) * nOxAliquot;
+  const cKMnO4 = nMn / (vKMnO4 / 1000);
+  return { M_NA2C2O4, nOxTotal, cOx, nOxAliquot, nMn, cKMnO4, vKMnO4 };
+}
+
+/** 莫尔盐中 Fe2+ 的 KMnO4 滴定：1 MnO4- : 5 Fe2+. */
+export function permanganateFe2Assay({
+  mSample = 0.375,
+  purity = 1,
+  sampleVolume = 100.00,
+  aliquot = 25.00,
+  cKMnO4 = 0.00200,
+  vKMnO4 = 23.90,
+} = {}) {
+  const nMnAliquot = cKMnO4 * vKMnO4 / 1000;
+  const nFeAliquot = 5 * nMnAliquot;
+  const nFeTotal = nFeAliquot * sampleVolume / aliquot;
+  const mFe = nFeTotal * AR.Fe;
+  return {
+    nMnAliquot, nFeAliquot, nFeTotal, mFe,
+    massFraction: mFe / mSample,
+    theoreticalFeFraction: AR.Fe / M_MOHR,
+    purity,
+    vTheoretical: (mSample / M_MOHR * purity * aliquot / sampleVolume / 5 / cKMnO4) * 1000,
+  };
+}
+
+export function titrationRepeatability(values) {
+  const clean = values.filter(Number.isFinite);
+  if (!clean.length) throw new RangeError('没有有效滴定读数');
+  const average = mean(clean);
+  const range = Math.max(...clean) - Math.min(...clean);
+  return { values: clean, average, range, acceptable: range <= 0.04 };
+}
+
+export function titrationRatio(vHCl, vNaOH) {
+  if (!(vNaOH > 0)) throw new RangeError('NaOH 体积必须为正');
+  return vHCl / vNaOH;
+}
+
+/**
+ * 高锰酸钾标定/测定的“三度一点”教学修正。
+ * 这是操作误差的方向性模型，不是反应动力学实测值。
+ */
+export function permanganateConditionFactor({
+  temperatureC = 75,
+  acidM = 0.75,
+  speed = 1,
+  endpointHoldS = 30,
+} = {}) {
+  const temp = temperatureC < 60 ? 0.90 : temperatureC > 80 ? 0.96 : 1;
+  const acid = acidM < 0.5 ? 0.91 : acidM > 1 ? 0.96 : 1;
+  const speedFactor = speed <= 0 ? 0.94 : speed >= 2 ? 0.97 : 1;
+  const endpoint = endpointHoldS < 30 ? 0.985 : 1;
+  return {
+    factor: temp * acid * speedFactor * endpoint,
+    lowTemperature: temperatureC < 60,
+    highTemperature: temperatureC > 80,
+    lowAcid: acidM < 0.5,
+    highAcid: acidM > 1,
+    fastStart: speed >= 2,
+    endpointTooShort: endpointHoldS < 30,
+  };
+}
+
+/**
+ * 滴定基本操作的结果模型。核心计量关系仍是强酸强碱 1:1；
+ * 润洗、排泡、视线和终点保持只改变读数或有效浓度。
+ */
+export function titrationOperation({
+  hclVolume = 25.00,
+  naohVolumes = [25.08, 25.05, 25.06],
+  pipetteRinsed = true,
+  buretteRinsed = true,
+  bubblesPurged = true,
+  eyeLevel = true,
+  wallWashed = true,
+  endpointHoldS = 30,
+} = {}) {
+  const dilution = pipetteRinsed ? 1 : 0.996;
+  const buretteFactor = buretteRinsed ? 1 : 0.996;
+  const eyeBias = eyeLevel ? 1 : 1.0015;
+  const wallBias = wallWashed ? 0 : 0.001;
+  const holdBias = endpointHoldS >= 30 ? 0 : 0.0008;
+  const measured = naohVolumes.map((v, i) =>
+    v * (1 + wallBias + holdBias) * eyeBias / buretteFactor +
+    (bubblesPurged ? 0 : (i === 0 ? 0.12 : 0.04))
+  );
+  const rep = titrationRepeatability(measured);
+  // 课件记录表按 0.01 mL 报告平均值；默认 25.00/25.06=0.9976。
+  const reportedAverage = Number(rep.average.toFixed(2));
+  const ratio = titrationRatio(hclVolume * dilution, reportedAverage);
+  return {
+    measured,
+    repeatability: rep,
+    reportedAverage,
+    ratio,
+    concentrationRatio: ratio,
+    concentrationErrorPct: (ratio - 1) * 100,
+    dilution,
+    buretteFactor,
+    eyeBias,
+    wallBias,
+    holdBias,
+  };
+}
+
 /**
  * KMnO₄ 滴定 Fe²⁺（实验四十之二）的化学计量。
  *      MnO₄⁻ + 5Fe²⁺ + 8H⁺ → Mn²⁺ + 5Fe³⁺ + 4H₂O
@@ -884,6 +1170,6 @@ export function permanganateTitration({ mSample, purity = 1, cKMnO4, vKMnO4 }) {
   return {
     nFe2, nMnO4, nFe2Titrated,
     vTheo: (nFe2 / 5) / cKMnO4 * 1000,                  // 理论消耗体积 / mL
-    wFe2: nFe2 * AR.Fe / (mSample / 1000),              // 以质量分数表示的 Fe²⁺ 含量
+    wFe2: nFe2 * AR.Fe / mSample,                       // 以质量分数表示的 Fe²⁺ 含量
   };
 }

@@ -2,14 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>场景构图自检</title>
+<title>过程型场景构图自检</title>
 <style>
   body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
   .grid { display:grid; grid-template-columns:repeat(2,725px); gap:6px; padding:6px; }
   .cell { width:725px; height:340px; overflow:hidden; position:relative;
           border:1px solid #212b34; border-radius:6px; background:#10161c; }
   .cell iframe { position:absolute; border:0; width:1240px; height:1000px;
-                 left:-225px; top:-605px; }
+                 left:-225px; top:-465px; }
   .tag { position:absolute; left:6px; top:4px; z-index:5; font-size:11px;
          background:rgba(10,14,18,.82); color:#e8a33d; padding:1px 6px; border-radius:3px; }
 </style>
@@ -17,16 +17,49 @@
 <body>
 <div class="grid" id="g"></div>
 <script>
-const FROM = +(new URLSearchParams(location.search).get('from') || 0);
-const N = 6;
-const NAMES = ['称取铁粉','加入硫酸','加热溶解','趁热过滤','加入硫酸铵','水浴蒸发',
-               '冷却结晶','减压抽滤','乙醇洗涤','晾干','称重','目视比色'];
+const query = new URLSearchParams(location.search);
+const SIM = query.get('sim') || 'mohr-salt';
+const FROM = +(query.get('from') || 0);
+const SCENES = {
+  'mohr-salt': {
+    title: '实验四十 · 硫酸亚铁铵的制备',
+    names: ['称取铁粉','加入硫酸','加热溶解','趁热过滤','加入硫酸铵','水浴蒸发',
+            '冷却结晶','减压抽滤','乙醇洗涤','晾干','称重','目视比色'],
+    count: 12,
+  },
+  'magnesium-molar': {
+    title: '实验二十一 · 置换法测定镁的摩尔质量',
+    names: ['称量镁带','组装并查漏','加酸并固定镁带','校平并记初读数',
+            '反应放氢','冷却至室温','记录终读数','平行测定与验算'],
+    count: 8,
+  },
+  kinetics: {
+    title: '实验十五 · 反应级数、速率及活化能',
+    names: ['准备储备试剂','配制预混合液','快速启动并计时','蓝色终点',
+            '浓度系列','拟合反应级数','温度系列','求活化能'],
+    count: 8,
+  },
+  'fe2-assay': {
+    title: '实验四十之二 · 硫酸亚铁铵中 Fe²⁺ 含量',
+    names: ['配制 KMnO₄','配制草酸钠标准液','加酸加热','标定终点',
+            '配制试样','平行滴定','计算含量','复核纯度'],
+    count: 8,
+  },
+  'titration-practice': {
+    title: '实验三十一 · 滴定分析基本操作练习',
+    names: ['配制操作溶液','移液管洗涤润洗','定量移取','滴定管润洗装液',
+            '排气泡并调零','控制滴定速度','判断终点并读数','平行测定与比值'],
+    count: 8,
+  },
+};
+const scene = SCENES[SIM] || SCENES['mohr-salt'];
+document.title = `${scene.title} · 场景构图自检`;
 const g = document.getElementById('g');
-for (let i = FROM; i < FROM + N; i++) {
+for (let i = FROM; i < Math.min(FROM + 6, scene.count); i++) {
   const d = document.createElement('div');
   d.className = 'cell';
-  d.innerHTML = `<div class="tag">${i + 1}. ${NAMES[i]}</div>` +
-    `<iframe src="/?sim=mohr-salt&step=${i}"></iframe>`;
+  d.innerHTML = `<div class="tag">${scene.title} · ${i + 1}. ${scene.names[i]}</div>` +
+    `<iframe src="/?sim=${SIM}&mode=guide&step=${i}"></iframe>`;
   g.append(d);
 }
 </script>

@@ -28,6 +28,10 @@ import * as gravimetry from './sims/gravimetry.js';
 import * as qcchart from './sims/qcchart.js';
 import * as ms from './sims/ms.js';
 import * as mohrSalt from './sims/mohr-salt.js';
+import * as magnesiumMolar from './sims/magnesium-molar.js';
+import * as kinetics from './sims/kinetics.js';
+import * as fe2Assay from './sims/fe2-assay.js';
+import * as titrationPractice from './sims/titration-practice.js';
 
 // 顺序 = 左栏显示顺序，按分析化学的知识脉络编排：
 //   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理 → 课程实验
@@ -37,6 +41,7 @@ const SIMS = [
   potentiometry, spectrophotometry, ir, aas, ms,
   chromatography, extraction, gravimetry, molecule3d,
   qcchart, precision, propagation, mohrSalt,
+  magnesiumMolar, kinetics, fe2Assay, titrationPractice,
 ];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
 
@@ -125,8 +130,8 @@ function navigate(id, opts, task) {
     currentUrlOpts = {};
   } else if (saved && saved.opts && saved.url === optsKey(opts)) {
     // 有 URL 参数且与存档记录的一致 —— 说明是同一次任务的 iframe 重载，恢复学生调过的值
+    currentUrlOpts = { ...opts };
     opts = saved.opts;
-    currentUrlOpts = opts;
   } else {
     // URL 参数与存档不同 —— 是智能体派来的新任务，以 URL 为准
     currentUrlOpts = opts;
@@ -247,6 +252,19 @@ main.addEventListener('input', () => {
   refreshRecord();
 });
 main.addEventListener('change', () => { persist(); refreshRecord(); });
+// Process simulators also change state through buttons, not only form inputs.
+main.addEventListener('sim-state-change', () => {
+  if (!current) return;
+  const opts = current.params();
+  const url = new URL(location.href);
+  url.search = new URLSearchParams({
+    sim: currentMeta.id, ...opts, ...(taskText ? { task: taskText } : {}),
+  }).toString();
+  currentUrlOpts = opts;
+  history.replaceState(null, '', url);
+  persist();
+  refreshRecord();
+});
 btnReset.onclick = () => {
   clearSaved(currentMeta.id);
   navigate(currentMeta.id, {}, taskText);

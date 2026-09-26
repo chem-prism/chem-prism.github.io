@@ -200,6 +200,242 @@ export function conicalFlask(ctx, box, o = {}) {
   ctx.restore();
 }
 
+/** Beaker and attachment coordinates share the same fitted geometry. */
+export function beaker(ctx, box, o = {}) {
+  const b = fitAspect(box, 1.05, 'bottom');
+  const { x, y, w, h } = b;
+  vessel(ctx, c => {
+    c.moveTo(x - w * 0.06, y);
+    c.lineTo(x, y + h * 0.04);
+    c.lineTo(x, y + h - 6);
+    c.quadraticCurveTo(x, y + h, x + 6, y + h);
+    c.lineTo(x + w - 6, y + h);
+    c.quadraticCurveTo(x + w, y + h, x + w, y + h - 6);
+    c.lineTo(x + w, y);
+  }, b, o);
+  graduations(ctx, { x, y: y + h * 0.14, w, h: h * 0.72 }, 4);
+  return { box: b, mouth: { x: x + w / 2, y }, bottom: { x: x + w / 2, y: y + h } };
+}
+
+export function gasMeasuringTube(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = Math.min(w * 0.18, 8);
+  const path = c => {
+    c.moveTo(x + r, y);
+    c.lineTo(x + w - r, y);
+    c.quadraticCurveTo(x + w, y, x + w, y + r);
+    c.lineTo(x + w, y + h);
+    c.lineTo(x, y + h);
+    c.lineTo(x, y + r);
+    c.quadraticCurveTo(x, y, x + r, y);
+    c.closePath();
+  };
+  vessel(ctx, path, box, o);
+  graduations(ctx, { x, y: y + 10, w, h: h - 20 }, 10, { side: 'right', len: Math.min(14, w * 0.55) });
+  ctx.save();
+  ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = cssVar('--faint', '#4c5b67');
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('mL', x + w - 3, y + 10);
+  ctx.restore();
+}
+
+export function burette(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const tubeW = Math.max(12, w * 0.28);
+  const tx = x + (w - tubeW) / 2;
+  const bodyH = h * 0.82;
+  const liquid = o.liquid || [160, 215, 205, 0.35];
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = GLASS.lw;
+  ctx.beginPath();
+  ctx.moveTo(tx, y);
+  ctx.lineTo(tx, y + bodyH);
+  ctx.lineTo(tx + tubeW, y + bodyH);
+  ctx.lineTo(tx + tubeW, y);
+  ctx.stroke();
+  ctx.restore();
+  vessel(ctx, c => {
+    c.rect(tx, y, tubeW, bodyH);
+  }, { x: tx, y, w: tubeW, h: bodyH }, { liquid, level: o.level ?? 0.18 });
+  ctx.save();
+  ctx.strokeStyle = GLASS.soft;
+  ctx.fillStyle = cssVar('--faint', '#4c5b67');
+  ctx.font = '9px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 10; i++) {
+    const yy = y + 8 + (bodyH - 16) * i / 10;
+    ctx.beginPath();
+    ctx.moveTo(tx + tubeW, yy);
+    ctx.lineTo(tx + tubeW + (i % 2 ? 5 : 9), yy);
+    ctx.stroke();
+    if (i % 2 === 0) ctx.fillText(String(i * 5), tx + tubeW + 12, yy);
+  }
+  const my = y + 8 + (bodyH - 16) * (1 - (o.level ?? 0.18));
+  ctx.strokeStyle = cssVar('--w-green', '#6bbc57');
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(tx + tubeW / 2, my, tubeW * 0.45, 3.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tx + tubeW / 2, y + bodyH);
+  ctx.lineTo(tx + tubeW / 2, y + bodyH + 20);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(tx + tubeW / 2, y + bodyH + 14, 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.moveTo(tx + tubeW / 2 + 7, y + bodyH + 14);
+  ctx.lineTo(tx + w * 0.84, y + bodyH + 24);
+  ctx.lineTo(tx + w * 0.84, y + h);
+  ctx.stroke();
+  ctx.restore();
+}
+
+export function volumetricFlask(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const neckW = w * 0.22, neckH = h * 0.42, nx = x + (w - neckW) / 2;
+  const path = c => {
+    c.moveTo(nx, y);
+    c.lineTo(nx, y + neckH);
+    c.quadraticCurveTo(nx, y + neckH + h * 0.12, x, y + h * 0.78);
+    c.quadraticCurveTo(x + w * 0.05, y + h, x + w * 0.25, y + h);
+    c.lineTo(x + w * 0.75, y + h);
+    c.quadraticCurveTo(x + w * 0.95, y + h, x + w, y + h * 0.78);
+    c.quadraticCurveTo(nx + neckW, y + neckH + h * 0.12, nx + neckW, y + neckH);
+    c.lineTo(nx + neckW, y);
+  };
+  vessel(ctx, path, box, o);
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(nx - 5, y);
+  ctx.lineTo(nx + neckW + 5, y);
+  ctx.moveTo(nx, y + neckH * 0.48);
+  ctx.lineTo(nx + neckW, y + neckH * 0.48);
+  ctx.stroke();
+  ctx.restore();
+}
+
+export function pipette(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(o.angle || 0);
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.fillStyle = 'rgba(190,210,220,0.20)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.38, -3);
+  ctx.lineTo(w * 0.28, -3);
+  ctx.quadraticCurveTo(w * 0.36, -3, w * 0.40, -8);
+  ctx.lineTo(w * 0.47, -8);
+  ctx.lineTo(w * 0.47, 8);
+  ctx.lineTo(w * 0.40, 8);
+  ctx.quadraticCurveTo(w * 0.36, 3, w * 0.28, 3);
+  ctx.lineTo(-w * 0.38, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+export function testTube(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = w / 2;
+  const path = c => {
+    c.moveTo(x, y);
+    c.lineTo(x + w, y);
+    c.lineTo(x + w, y + h - r);
+    c.arc(x + r, y + h - r, r, 0, Math.PI);
+    c.closePath();
+  };
+  vessel(ctx, path, box, o);
+}
+
+export function stirPlate(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  ctx.save();
+  ctx.fillStyle = 'rgba(36,45,53,0.95)';
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.4;
+  ctx.roundRect ? ctx.roundRect(x, y, w, h, 5) : ctx.rect(x, y, w, h);
+  ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(200,220,230,0.32)';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.45, y + h * 0.37, w * 0.25, h * 0.13, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = cssVar('--w-red', '#e05a4f');
+  ctx.beginPath(); ctx.arc(x + w * 0.82, y + h * 0.66, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+export function thermometer(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h - 8); ctx.stroke();
+  ctx.fillStyle = cssVar('--w-red', '#e05a4f');
+  ctx.beginPath(); ctx.arc(x + w / 2, y + h - 5, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(x + w / 2 - 2, y + h * 0.35, 4, h * 0.58);
+  ctx.restore();
+}
+
+export function stopwatch(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = Math.min(w, h) * 0.36, cx = x + w / 2, cy = y + h * 0.57;
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + r * 0.55, cy - r * 0.15); ctx.stroke();
+  ctx.fillStyle = cssVar('--text', '#dde5ec'); ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center'; ctx.fillText(o.text || '00.0 s', cx, cy + r + 15);
+  ctx.restore();
+}
+
+export function retortStand(ctx, { x, y, w, h }, o = {}) {
+  ctx.save();
+  ctx.strokeStyle = o.stroke || GLASS.stroke;
+  ctx.fillStyle = 'rgba(120,145,160,0.13)';
+  ctx.lineWidth = 2;
+  ctx.fillRect(x, y + h - 10, w, 10);
+  ctx.strokeRect(x, y + h - 10, w, 10);
+  const pole = x + w * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(pole, y + h - 10);
+  ctx.lineTo(pole, y);
+  ctx.stroke();
+  if (o.clamp) {
+    ctx.beginPath();
+    ctx.moveTo(pole, o.clamp.y);
+    ctx.lineTo(o.clamp.x, o.clamp.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(o.clamp.x, o.clamp.y, o.clamp.radius || 30, 5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+export function tubing(ctx, points, o = {}) {
+  ctx.save();
+  ctx.lineWidth = o.width || 6;
+  ctx.strokeStyle = o.color || 'rgba(160,174,184,0.85)';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  ctx.stroke();
+  ctx.restore();
+}
+
 /**
  * 量筒
  *
@@ -239,9 +475,8 @@ function cylinderBody(ctx, box, o = {}) {
   graduations(ctx, { x, y: rimY + 10, w, h: tubeBottom - rimY - 16 }, 6,
     { side: 'left', len: Math.min(13, w * 0.45) });
 
-  // 六角底座：比管身宽，但做成有厚度的脚，不是一片碟。
-  // 倾斜（倒液）时不画——底座会翘到上面，看着像第二个瓶口。
-  if (!o.tilt) {
+  // The base remains attached when a cylinder is tilted.
+  {
     const fw = Math.min(w * 1.25, w + 18);
     const fx = x + (w - fw) / 2;
     ctx.save();
@@ -542,14 +777,14 @@ export function suctionFlask(ctx, box, o = {}) {
  * 朝下的穹顶会让晶体看起来悬在弧线外面。
  */
 export function watchGlass(ctx, box, o = {}) {
-  const b = fitAspect(box, 0.26, 'bottom');
+  const b = fitAspect(box, 0.12, 'bottom');
   const { x, y, w, h } = b;
 
   // 皿底最深处为 h（二次曲线控制点取 1.85h 时，最低点在 0.925h）
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(x + w / 2, y + h * 1.85, x + w, y);
+    ctx.quadraticCurveTo(x + w / 2, y + h * 2, x + w, y);
   ctx.strokeStyle = GLASS.stroke;
   ctx.lineWidth = GLASS.lw;
   ctx.lineJoin = 'round';
@@ -561,10 +796,17 @@ export function watchGlass(ctx, box, o = {}) {
   const depthFn = u => 3.7 * u * (1 - u);
 
   if (o.crystal > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + w / 2, y + h * 2, x + w, y);
+    ctx.closePath();
+    ctx.clip();
     crystals(ctx, {
-      x: x + w * 0.12, y: y + h * 0.30,
-      w: w * 0.76, h: h * 0.72,
+      x: x + w * 0.12, y: y + h * 0.10,
+      w: w * 0.76, h: h * 0.65,
     }, o.t || 0, o.crystal, { color: o.crystalColor, spin: false, depthFn });
+    ctx.restore();
   }
 }
 
@@ -666,6 +908,11 @@ export function balance(ctx, box, o = {}) {
   ctx.moveTo(x + w * 0.14, panY);
   ctx.lineTo(x + w * 0.86, panY);
   ctx.stroke();
+  // A real support joins the pan to the housing; feet sit at box.bottom.
+  ctx.fillStyle = 'rgba(120,140,155,0.6)';
+  ctx.fillRect(x + w * 0.46, panY, w * 0.08, h * 0.10);
+  ctx.fillRect(x + w * 0.14, y + h * 0.86, w * 0.10, h * 0.14);
+  ctx.fillRect(x + w * 0.76, y + h * 0.86, w * 0.10, h * 0.14);
   // 盘上的东西
   if (o.item) {
     ctx.fillStyle = rgba(o.itemColor || [120, 126, 132, 0.9]);

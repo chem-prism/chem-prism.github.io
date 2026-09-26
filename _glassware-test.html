@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>璃器皿自检</title>
+<title>玻璃器皿自检</title>
 <style>
   body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
   canvas { display:block; }
@@ -13,17 +13,9 @@
 <script type="module">
 import * as G from './js/glassware.js';
 
-const COLS = 5, CELL_W = 200, CELL_H = 260, ROWS = 3;
+const COLS = 5, CELL_W = 200, CELL_H = 260;
 const cv = document.getElementById('cv');
 const dpr = 2;
-cv.width = COLS * CELL_W * dpr;
-cv.height = ROWS * CELL_H * dpr;
-cv.style.width = (COLS * CELL_W) + 'px';
-cv.style.height = (ROWS * CELL_H) + 'px';
-const ctx = cv.getContext('2d');
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-ctx.fillStyle = '#0a0e12';
-ctx.fillRect(0, 0, COLS * CELL_W, ROWS * CELL_H);
 
 const LIQ = [110, 200, 190, 0.55];
 
@@ -56,8 +48,30 @@ const items = [
   ['玻璃棒',           (c, b) => G.stirringRod(c, b, { angle: 18 })],
   ['气泡 + 晶体',      (c, b) => { G.bubbles(c, b, 1.5, 0.9);
                                    G.crystals(c, { x: b.x + 10, y: b.y + 10, w: b.w - 20, h: b.h - 20 }, 1.5, 0.7, { color: G.MOHR_CRYSTAL_COLOR }); }],
+  ['量气管',            (c, b) => G.gasMeasuringTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.52 })],
+  ['滴定管',            (c, b) => G.burette(c, b, { liquid: [110, 200, 190, 0.42], level: 0.28 })],
+  ['容量瓶',            (c, b) => G.volumetricFlask(c, b, { liquid: [110, 200, 190, 0.32], level: 0.46 })],
+  ['移液管',            (c, b) => G.pipette(c, b, { angle: -0.10 })],
+  ['大试管',            (c, b) => G.testTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.42 })],
+  ['磁力搅拌器',        (c, b) => G.stirPlate(c, b)],
+  ['温度计',            (c, b) => G.thermometer(c, b)],
+  ['秒表',              (c, b) => G.stopwatch(c, b, { text: '82.0 s' })],
+  ['铁架台',            (c, b) => G.retortStand(c, b, { clamp: { x: b.x + b.w * 0.72, y: b.y + b.h * 0.34, radius: b.w * 0.25 } })],
+  ['导管',              (c, b) => G.tubing(c, [
+    [b.x + 8, b.y + b.h * 0.72], [b.x + b.w * 0.38, b.y + b.h * 0.72],
+    [b.x + b.w * 0.38, b.y + b.h * 0.30], [b.x + b.w - 8, b.y + b.h * 0.30],
+  ], { width: 6 })],
 ];
 
+const ROWS = Math.ceil(items.length / COLS);
+cv.width = COLS * CELL_W * dpr;
+cv.height = ROWS * CELL_H * dpr;
+cv.style.width = (COLS * CELL_W) + 'px';
+cv.style.height = (ROWS * CELL_H) + 'px';
+const ctx = cv.getContext('2d');
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+ctx.fillStyle = '#0a0e12';
+ctx.fillRect(0, 0, COLS * CELL_W, ROWS * CELL_H);
 items.forEach(([name, fn], i) => {
   const col = i % COLS, row = (i / COLS) | 0;
   const ox = col * CELL_W, oy = row * CELL_H;

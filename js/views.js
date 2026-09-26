@@ -237,12 +237,13 @@ export class ParticleField {
     this._raf = null;
     this._t0 = 0;
     this._loop = this._loop.bind(this);
-    window.addEventListener('resize', () => this.draw());
+    this._onResize = () => { this._reseed(); this.draw(); };
+    window.addEventListener('resize', this._onResize);
   }
 
   /** species: [{ label, n, color }]，n 为要显示的粒子个数 */
   set(species, note = '') {
-    const key = species.map(s => `${s.label}:${s.n}`).join(',');
+    const key = species.map(s => `${s.label}:${s.n}:${s.phase || ''}:${s.color}`).join(',');
     if (key === this._key) { this.note = note; this.draw(); return; }
     this._key = key;
     this.species = species.filter(s => s.n > 0);
@@ -255,6 +256,8 @@ export class ParticleField {
     const c = fit(this.cv);
     if (!c) { this._parts = []; return; }
     const { w, h } = c;
+    const top = this._legendHeight(w);
+    const available = Math.max(20, h - top - 24);
     const parts = [];
     const slots = [];
     this.species.forEach((sp, si) => {
@@ -265,12 +268,12 @@ export class ParticleField {
     const rows = Math.ceil(slots.length / cols);
     slots.forEach((s, i) => {
       const cx = (i % cols + 0.5) * (w / cols);
-      const cy = (Math.floor(i / cols) + 0.5) * (h / rows);
+      const cy = top + (Math.floor(i / cols) + 0.5) * (available / rows);
       parts.push({
         x: cx + (Math.random() - 0.5) * (w / cols) * 0.55,
-        y: cy + (Math.random() - 0.5) * (h / rows) * 0.55,
-        vx: (Math.random() - 0.5) * 0.16,
-        vy: (Math.random() - 0.5) * 0.16,
+        y: cy + (Math.random() - 0.5) * (available / rows) * 0.55,
+        vx: s.sp.phase === 'solid' ? 0 : (Math.random() - 0.5) * 0.16,
+        vy: s.sp.phase === 'solid' ? 0 : (Math.random() - 0.5) * 0.16,
         r: s.sp.r || 4.6,
         color: s.sp.color,
         label: s.sp.label,
@@ -286,6 +289,19 @@ export class ParticleField {
   }
 
   stop() { if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; } }
+  destroy() { this.stop(); window.removeEventListener('resize', this._onResize); }
+
+  _legendHeight(w) {
+    const ctx = this.cv.getContext('2d');
+    ctx.font = '11px ui-monospace, Menlo, monospace';
+    let x = 8, rows = 1;
+    this.species.forEach(sp => {
+      const width = ctx.measureText(`${sp.label} ×${sp.n}`).width + 30;
+      if (x + width > w && x > 8) { x = 8; rows++; }
+      x += width;
+    });
+    return rows * 20 + 14;
+  }
 
   _loop(t) {
     const dt = Math.min((t - this._t0) / 16.7, 3);
@@ -294,9 +310,10 @@ export class ParticleField {
     this._parts.forEach(p => {
       p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.x < p.r || p.x > c.w - p.r) p.vx *= -1;
-      if (p.y < p.r || p.y > c.h - p.r) p.vy *= -1;
+      const top = this._legendHeight(c.w);
+      if (p.y < top + p.r || p.y > c.h - 24 - p.r) p.vy *= -1;
       p.x = Math.max(p.r, Math.min(c.w - p.r, p.x));
-      p.y = Math.max(p.r, Math.min(c.h - p.r, p.y));
+      p.y = Math.max(top + p.r, Math.min(c.h - 24 - p.r, p.y));
     });
     this.draw();
     this._raf = requestAnimationFrame(this._loop);
@@ -323,19 +340,20 @@ export class ParticleField {
     });
 
     // 图例
-    let lx = 8;
-    ctx.font = '10px ui-monospace, Menlo, monospace';
+    let lx = 8, ly = 13;
+    ctx.font = '11px ui-monospace, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     this.species.forEach(sp => {
+      const txt = `${sp.label} ×${sp.n}`;
+      const width = 11 + ctx.measureText(txt).width + 12;
+      if (lx + width > w && lx > 8) { lx = 8; ly += 20; }
       ctx.beginPath();
-      ctx.arc(lx + 4, 11, 4, 0, Math.PI * 2);
+      ctx.arc(lx + 4, ly, 4, 0, Math.PI * 2);
       ctx.fillStyle = resolveColor(sp.color); ctx.fill();
       ctx.fillStyle = varColor('--dim', '#7b8c99');
-      const txt = `${sp.label} ×${sp.n}`;
-      ctx.fillText(txt, lx + 11, 11.5);
-      lx += 11 + ctx.measureText(txt).width + 12;
-      if (lx > w - 60) lx = 8;
+      ctx.fillText(txt, lx + 11, ly);
+      lx += width;
     });
 
     if (this.note) {
