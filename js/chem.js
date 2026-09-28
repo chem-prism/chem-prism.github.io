@@ -1663,3 +1663,60 @@ export function prussianBlueColor(density) {
 
 /** 普鲁士白 K₂Feᴵᴵ[Feᴵᴵ(CN)₆]——刚显影、还没被氧化的近白色 */
 export const PRUSSIAN_WHITE = [233, 238, 238];
+
+/* ============================================================
+ * 课程实验：配合物的生成与性质（实验 10）
+ *
+ * 数据来源 —— 本课程课件（P175-179）：
+ *   · 内外界：[Cu(NH₃)₄]SO₄；螯合剂 en/bipy/phen/ox（二齿）、EDTA（六齿）
+ *   · [Co(NH₃)₆]Cl₃ K稳 = 1.58×10³⁵（课件原值）
+ *   · 沉淀转化、配位溶解的判据用 K = Ksp × K稳（复合平衡常数）
+ *   · AgX：AgCl 1.8×10⁻¹⁰、AgBr 5.0×10⁻¹³、AgI 8.3×10⁻¹⁷（AgI 取教材表值——
+ *     前后测卷第 6 题的 8.5×10⁻¹⁷ 是另一来源）；Ag₂S 6.3×10⁻⁵⁰；CuI 1.27×10⁻¹²
+ *   · K稳（教材/常用值）：[Ag(NH₃)₂]⁺ 1.1×10⁷、[Ag(S₂O₃)₂]³⁻ 2.9×10¹³、
+ *     [Cu(NH₃)₄]²⁺ 2.1×10¹³、CuY²⁻ 6.3×10¹⁸、[FeF₆]³⁻ ≈1×10¹⁶
+ *
+ * 现象判断全部由这些常数推出（可 node 验算）；拖尾/滴数等界面量在 sim 里。
+ * ============================================================ */
+
+export const COMPLEX_FACTS = {
+  stabilities: [
+    { name: '[Cu(NH₃)₄]²⁺', kf: 2.1e13 },
+    { name: '[Ag(NH₃)₂]⁺', kf: 1.1e7 },
+    { name: '[Ag(S₂O₃)₂]³⁻', kf: 2.9e13 },
+    { name: '[FeF₆]³⁻', kf: 1.0e16 },
+    { name: '[Co(NH₃)₆]³⁺', kf: 1.58e35 },   // 课件原值
+    { name: 'CuY²⁻（EDTA）', kf: 6.3e18 },
+  ],
+  ksp: { AgCl: 1.8e-10, AgBr: 5.0e-13, AgI: 8.3e-17, Ag2S: 6.3e-50, CuI: 1.27e-12 },
+};
+
+/**
+ * 卤化银能否被配体溶解：复合平衡 AgX(s) + nL ⇌ [AgLₙ] + X⁻ 的 K = Ksp×K稳。
+ * 溶解度近似解 x = cL·t/(1+2t)，t = √K（1:2 配位、忽略逐级配位）。
+ * 判定：x ≥ 0.05 M 易溶 / 0.005~0.05 微溶（看得出一点）/ < 0.005 不溶。
+ * ⚠️ 例：AgI + 0.5 M Na₂S₂O₃ 的 K 只有 2.4×10⁻³，x ≈ 0.02——「微溶」。
+ *    教材常直接写「AgI 不溶于硫代硫酸钠」；按常数算确有少量溶解（比 AgBr 弱 4 个数量级），
+ *    这里按常数显示并注明出处的取值。
+ */
+export function silverHalideDissolution({ halide = 'AgCl', ligand = 'NH3' } = {}) {
+  const ksp = COMPLEX_FACTS.ksp[halide];
+  const kf = ligand === 'NH3' ? 1.1e7 : 2.9e13;      // [Ag(NH₃)₂]⁺ / [Ag(S₂O₃)₂]³⁻
+  const cL = ligand === 'NH3' ? 2.0 : 0.5;           // 2 mol/L 氨水 / 0.5 mol/L Na₂S₂O₃
+  const k = ksp * kf;
+  let s, verdict;
+  if (k >= 1) { s = null; verdict = '易溶（完全溶解）'; }
+  else {
+    const t = Math.sqrt(k);
+    s = cL * t / (1 + 2 * t);
+    verdict = s >= 0.05 ? '易溶' : s >= 0.005 ? '微溶（看得出少量溶解）' : '不溶（看不出溶解）';
+  }
+  return { ksp, kf, cL, k, s, verdict };
+}
+
+/** 氨水逐滴加入 CuSO₄ 的现象状态（1 mL ≈ 20 滴，6 mol/L 氨水） */
+export function cuAmmoniaState({ drops = 10 } = {}) {
+  if (drops <= 1) return { state: 'none', note: '还没有明显变化（氨水太少）' };
+  if (drops <= 5) return { state: 'precipitate', note: '析出浅蓝色沉淀 Cu₂(OH)₂SO₄' };
+  return { state: 'deepblue', note: '沉淀溶解，得到深蓝色溶液 [Cu(NH₃)₄]²⁺' };
+}

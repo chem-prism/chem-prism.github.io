@@ -1,6 +1,6 @@
 # 化学三棱镜 · 探究工作台
 
-分析化学三重表征探究工作台的部署站点。二十七组可交互模拟器，覆盖教材全部主干：四大滴定、电化学、光谱与质谱、色谱与分离、空间结构、数据与质量，以及九个课程实验过程模拟器。访问：**https://chem-prism.github.io/**
+分析化学三重表征探究工作台的部署站点。二十八组可交互模拟器，覆盖教材全部主干：四大滴定、电化学、光谱与质谱、色谱与分离、空间结构、数据与质量，以及十个课程实验过程模拟器。访问：**https://chem-prism.github.io/**
 
 零依赖的静态站点，纯 ES Module + Canvas，无需构建步骤。可直接被教学智能体以 iframe 嵌入。
 
@@ -20,7 +20,7 @@
 指示剂颜色按两型体比例 `1/(1+10^(pKa−pH))` 连续渐变，
 顺带把「变色为什么是一个区间而不是某一点」也讲清楚了。
 
-## 二十七组模拟器
+## 二十八组模拟器
 
 | 模拟器 | 波长 | 教学指向 |
 |---|---|---|
@@ -51,6 +51,7 @@
 | pH 法测醋酸电离常数 | 实验 07 | **过程型**：pH 计两点校准与斜率合格线、由稀到浓、Ka 不随浓度变而 α 随稀释增大、有效数字与 Q 检验 |
 | Fe³⁺ 含量测定（分光光度法） | 实验 09 | **过程型**：除氧水与酸度、比色皿配对与 V 标记、吸收曲线定 λmax=480、标准曲线求含量与 Ⅰ/Ⅱ/Ⅲ 分级 |
 | 蓝晒印相（光敏剂合成） | 实验 08 | **过程型**：合成光敏剂（产率分解）、趁热过滤、涂布曝光（剂量曲线）、水洗显影——普鲁士白氧化成普鲁士蓝 |
+| 配合物的生成与性质 | 实验 10 | **过程型**：现象树——酸碱/配位竞争/沉淀/氧化还原四路推动配位平衡、K=Ksp×K稳、离心机规程、鉴定与萃取 |
 
 ## 任务模式（供智能体派发）
 
@@ -88,6 +89,7 @@ https://chem-prism.github.io/?sim=<模拟器>&<参数键值>&task=<任务说明>
 | `ph-acetic` | `mode`、`step`（0~9）、`run=1`；`mKHP`、`vStdMean`、`dissolve`、`endpointHold`、`stdOutlier`、`vHAcMean`、`hacThird`、`pipetteRinse`、`calibrated`、`slopePct`、`measureOrder`、`electrodeCare`、`kaFormula`、`tempC` |
 | `fe3-spec` | `mode`、`step`（0~9）、`run=1`；`mSample`、`deaerated`、`transfer`、`acidVolume`、`developMinutes`、`reagentBatch`、`cuvettePaired`、`cellHandling`、`sampleWavelength` |
 | `cyanotype` | `mode`、`step`（0~11）、`run=1`；`mMohr`、`waterVol`、`h2o2Fresh`、`oxidMinutes`、`Tfilter`、`ethanolVol`、`dryPlace`、`brushTechnique`、`sheetDry`、`exposureSource`、`uvSeconds`、`sunMinutes`、`washMethod`、`oxidize` |
+| `complex-chem` | `mode`、`step`（0~11）、`run=1`；`cuDrops`、`cuMode`、`cuParts`、`cuAcid`、`edtaAdd`、`feMask`、`agDissolver`、`pptChain`、`s2o3Check`、`centrifugeRpm`、`tubeBalance`、`niBase`、`kTest`、`amylAdd` |
 
 > 上表只列了常用的一部分。**完整参数键以 `智雅搭建/skills/chem-workbench/SKILL.md` 的对照表为准**——那份是给智能体派任务用的，覆盖面最全。
 
@@ -105,7 +107,7 @@ js/chem.js              化学计算内核（可单独用 node 验算）
 js/chart.js             Canvas 绘图内核
 js/views.js             三层视图组件（烧杯、粒子场、比色皿、数轴、球棍模型）
 js/glassware.js         玻璃仪器绘制库（锥形瓶、漏斗、蒸发皿、水浴锅、布氏漏斗…）
-js/sims/*.js            二十七个模拟器
+js/sims/*.js            二十八个模拟器
 ```
 
 ## 数值可靠性

@@ -1530,6 +1530,214 @@ export function spectrophotometer(ctx, box, o = {}) {
   return { cell: cellBox };
 }
 
+/* ---------- 配合物实验（实验 10）：离心机、离心管、试管架 ---------- */
+
+/**
+ * 台式低速离心机（照 TDZ4-WS 画）：白色机身 + 蓝色面板（转速/时间显示 + 箭头与起停键）
+ * + 门盖与门锁拉手；o.open 时画打开的转子仓（角转子一圈 18 个管孔，按 t 旋转）。
+ * o = { open: true, rpm: 3000, minutes: 5, spinning: false, unbalanced: false, t }
+ */
+export function centrifuge(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const bodyH = h * 0.62;
+  const bodyY = y + h - bodyH;
+  ctx.save();
+  // 机身（白色机器，与深色场景拉开）
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, bodyY, w, bodyH, 5) : ctx.rect(x, bodyY, w, bodyH);
+  ctx.fillStyle = 'rgba(206,212,218,0.94)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(140,152,163,0.8)';
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  // 蓝色操作面板
+  const px = x + w * 0.10, py = bodyY + bodyH * 0.30;
+  const pw = w * 0.80, ph = bodyH * 0.42;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(px, py, pw, ph, 3) : ctx.rect(px, py, pw, ph);
+  ctx.fillStyle = 'rgba(58,104,178,0.92)';
+  ctx.fill();
+  // 屏幕
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(px + pw * 0.06, py + ph * 0.14, pw * 0.50, ph * 0.38, 2)
+    : ctx.rect(px + pw * 0.06, py + ph * 0.14, pw * 0.50, ph * 0.38);
+  ctx.fillStyle = 'rgba(10,18,30,0.95)';
+  ctx.fill();
+  ctx.font = '600 9px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#7fc4ff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.round(o.rpm ?? 3000)} r/min`, px + pw * 0.31, py + ph * 0.24);
+  ctx.fillText(`${Math.round(o.minutes ?? 5)} min`, px + pw * 0.31, py + ph * 0.44);
+  // 按键（箭头 + 起停）
+  const keys = ['▲', '▼', '启动'];
+  keys.forEach((lb, i) => {
+    const kx = px + pw * (0.64 + 0.12 * i);
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(kx, py + ph * 0.20, pw * 0.10, ph * 0.50, 2)
+      : ctx.rect(kx, py + ph * 0.20, pw * 0.10, ph * 0.50);
+    ctx.fillStyle = 'rgba(226,232,238,0.92)';
+    ctx.fill();
+    ctx.font = '7px "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(40,50,60,0.95)';
+    ctx.fillText(lb, kx + pw * 0.05, py + ph * 0.45);
+  });
+  // 门锁拉手（右侧）
+  ctx.fillStyle = 'rgba(120,132,142,0.9)';
+  ctx.fillRect(x + w - 4, bodyY + bodyH * 0.30, 4, bodyH * 0.22);
+  // 门盖 / 打开的转子仓
+  if (o.open) {
+    const rx = x + w * 0.14, ry = y + h * 0.04;
+    const rw = w * 0.72, rh = h * 0.40;
+    // 仓体
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(rx, ry, rw, rh, 4) : ctx.rect(rx, ry, rw, rh);
+    ctx.fillStyle = 'rgba(178,186,194,0.9)';
+    ctx.fill();
+    ctx.stroke();
+    // 转子：一圈管孔
+    const cxr = rx + rw / 2, cyr = ry + rh / 2, rr = Math.min(rw, rh) * 0.34;
+    const spin = o.spinning ? (o.t || 0) * 2.4 : 0;
+    ctx.beginPath();
+    ctx.arc(cxr, cyr, rr, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(52,60,68,0.95)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,132,142,0.8)';
+    ctx.stroke();
+    for (let k = 0; k < 12; k++) {
+      const a = spin + k * Math.PI / 6;
+      ctx.beginPath();
+      ctx.arc(cxr + Math.cos(a) * rr * 0.68, cyr + Math.sin(a) * rr * 0.68, Math.max(2, rr * 0.14), 0, Math.PI * 2);
+      ctx.fillStyle = k < 2 ? 'rgba(190,210,230,0.9)' : 'rgba(28,34,40,0.9)';
+      ctx.fill();
+    }
+    // 门盖（打开：立在后面）
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x + w * 0.14, y - h * 0.10, w * 0.72, h * 0.12, 3)
+      : ctx.rect(x + w * 0.14, y - h * 0.10, w * 0.72, h * 0.12);
+    ctx.fillStyle = 'rgba(196,202,210,0.9)';
+    ctx.fill();
+    ctx.stroke();
+    if (o.unbalanced) {
+      ctx.font = '600 10px "PingFang SC", sans-serif';
+      ctx.fillStyle = '#e05a4f';
+      ctx.textAlign = 'left';
+      ctx.fillText('振动！', cxr + rr + 6, cyr);
+    }
+  } else {
+    // 合盖
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x + w * 0.06, y + h * 0.10, w * 0.88, bodyH * 0.34, 4)
+      : ctx.rect(x + w * 0.06, y + h * 0.10, w * 0.88, bodyH * 0.34);
+    ctx.fillStyle = 'rgba(196,202,210,0.92)';
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * 10 mL 离心管（塑料，螺旋盖、锥形底）。o = { liquid, level, pellet, pelletColor }
+ * pellet = 0..1 底部沉淀的高度占比（离心后压实）。
+ */
+export function centrifugeTube(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = w * 0.5;
+  const bodyTop = y + h * 0.12;
+  const path = c => {
+    c.moveTo(x, bodyTop);
+    c.lineTo(x, y + h - r * 1.6);
+    c.quadraticCurveTo(x, y + h, x + w / 2, y + h);
+    c.quadraticCurveTo(x + w, y + h, x + w, y + h - r * 1.6);
+    c.lineTo(x + w, bodyTop);
+  };
+  const level = Math.min(2 / 3, Math.max(0, o.level ?? 0.5)) * 0.92;   // 课件：不超过 2/3
+  vessel(ctx, path, { x, y: bodyTop, w, h: h - (bodyTop - y) }, { liquid: o.liquid, level, highlight: false });
+  // 盖
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x - 1.5, y, w + 3, h * 0.11, 2) : ctx.rect(x - 1.5, y, w + 3, h * 0.11);
+  ctx.fillStyle = 'rgba(90,110,130,0.9)';
+  ctx.fill();
+  ctx.restore();
+  // 沉淀（锥底）
+  if (o.pellet > 0.02) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.14, y + h - r * 1.2);
+    ctx.lineTo(x + w * 0.86, y + h - r * 1.2);
+    ctx.lineTo(x + w / 2, y + h - 1);
+    ctx.closePath();
+    ctx.fillStyle = rgba(o.pelletColor || [235, 238, 240, 0.95]);
+    ctx.globalAlpha = Math.min(1, o.pellet);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * 试管架：一条横杆 + N 支试管（可带液色、底部沉淀色）。
+ * o.tubes = [{ liquid: [r,g,b,a], level, solid: [r,g,b,a], solidLevel, label, dashed }]
+ * dashed = true 时试管用虚线描边（表示"没做这一支"）。
+ */
+export function testTubeRack(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const tubes = o.tubes || [];
+  const n = Math.max(1, tubes.length);
+  const slot = w / n;
+  const tw = Math.min(slot * 0.52, h * 0.30);
+  const th = h * 0.86;
+  ctx.save();
+  // 架子（两条横杆）
+  const railY1 = y + h * 0.34, railY2 = y + h * 0.94;
+  ctx.strokeStyle = 'rgba(140,156,170,0.7)';
+  ctx.lineWidth = Math.max(3, h * 0.035);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.03, railY1); ctx.lineTo(x + w * 0.97, railY1);
+  ctx.moveTo(x + w * 0.03, railY2); ctx.lineTo(x + w * 0.97, railY2);
+  ctx.stroke();
+  // 试管
+  tubes.forEach((tb, k) => {
+    const bx = x + slot * k + (slot - tw) / 2;
+    const tubeBox = { x: bx, y: y + h * 0.06, w: tw, h: th };
+    if (tb.dashed) {
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(120,132,142,0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(tubeBox.x, tubeBox.y, tubeBox.w, tubeBox.h, tubeBox.w * 0.4)
+        : ctx.rect(tubeBox.x, tubeBox.y, tubeBox.w, tubeBox.h);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      testTube(ctx, tubeBox, { liquid: tb.liquid, level: tb.level ?? 0.5 });
+      // solid 是**沉淀颜色**（[r,g,b,a]），数量走 solidLevel——两者曾混用一个字段，
+      // 数组颜色被 `> 0.02` 静默判否（沉淀永远不画）、传数字则 rgba(0.15) 直接崩。
+      const amount = tb.solidLevel ?? (Array.isArray(tb.solid) ? 0.9 : 0);
+      if (Array.isArray(tb.solid) && amount > 0.02) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(tubeBox.x + tubeBox.w / 2, tubeBox.y + tubeBox.h - tubeBox.w * 0.45,
+          tubeBox.w * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(tb.solid);
+        ctx.globalAlpha = Math.min(1, amount);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    if (tb.label) {
+      ctx.font = '9px "PingFang SC", sans-serif';
+      ctx.fillStyle = 'rgba(160,180,196,0.85)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(tb.label, bx + tw / 2, railY2 + 6);
+    }
+  });
+  ctx.restore();
+}
+
 /* ---------- 蓝晒（实验 08）：印相卡、曝光箱、显影盘 ---------- */
 
 /** 叶脉剪纸剪影（蓝晒的「素材」）——确定性路径，供印相卡反复使用 */

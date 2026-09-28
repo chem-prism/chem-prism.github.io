@@ -99,6 +99,22 @@ const items = [
   ['显影盘（显影中）', (c, b) => G.developTray(c,
     { x: b.x, y: b.y + b.h * 0.26, w: b.w, h: b.h * 0.52 },
     { density: 0.9, oxidized: 0.4, t: 1.2 })],
+  ['离心机（开盖）', (c, b) => G.centrifuge(c, { x: b.x, y: b.y + b.h * 0.30, w: b.w, h: b.h * 0.62 },
+    { open: true, rpm: 3000, minutes: 5, spinning: true, t: 1.5 })],
+  ['离心管 ×3', (c, b) => {
+    for (let i = 0; i < 3; i++) {
+      G.centrifugeTube(c, { x: b.x + 10 + i * 34, y: b.y + b.h * 0.34, w: 24, h: 100 },
+        { liquid: [214, 226, 238, 0.3], level: 0.6, pellet: i === 1 ? 0.9 : 0, pelletColor: [236, 238, 240, 0.95] });
+    }
+  }],
+  ['试管架 ×4', (c, b) => G.testTubeRack(c, { x: b.x + 4, y: b.y + b.h * 0.28, w: b.w - 8, h: b.h * 0.56 }, {
+    tubes: [
+      { liquid: [20, 60, 150, 0.65], level: 0.5, label: '深蓝' },
+      { liquid: [235, 240, 244, 0.4], level: 0.5, solid: [240, 242, 244, 1], solidLevel: 0.8, label: 'AgCl' },
+      { liquid: [216, 220, 140, 0.55], level: 0.5, solid: [222, 208, 90, 1], solidLevel: 0.8, label: 'AgI' },
+      { dashed: true, label: '对照' },
+    ],
+  })],
 ];
 
 const ROWS = Math.ceil(items.length / COLS);
