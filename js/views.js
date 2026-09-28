@@ -94,6 +94,82 @@ export function indicatorColor(name, ph) {
   );
 }
 
+/* ============================================================
+ * 金属指示剂（配位滴定用）
+ *
+ * 铬黑 T、钙指示剂这一类**装不进上面的两型体模型**：
+ * 与金属络合之后的颜色（MIn）不是指示剂自身的酸式/碱式色——
+ * 铬黑 T 若按两型体算，pH 10 会得「橙色」（游离态碱式色），
+ * 而真实的终点色是 HIn²⁻ 的蓝色，化学上直接错。
+ * 所以单列：游离态的颜色 + MIn 络合色，按 complexed ∈ [0,1] 混合。
+ *
+ * ⚠️ complexed 是教学标定的**视觉插值**，不是由 [M]/K′ 算出的物种分布；
+ *    它只保证「紫红 → 蓝紫 → 纯蓝」的方向与课件记录的中间态一致
+ *    （课件 P23/P25 原页：「不是终点，但接近终点」的蓝紫一档）。
+ * ============================================================ */
+
+const METAL_INDICATOR_MODEL = {
+  '铬黑T': {
+    pKa1: 6.3, pKa2: 11.6,
+    acid: [120, 48, 108, 0.80],   // H₂In⁻ 紫色（pH<6.3；与 MIn 颜色相近，终点难判）
+    mid:  [ 36,  78, 176, 0.62],  // HIn²⁻ 蓝色（6.3~11.6，即终点色）
+    base: [212, 130,  40, 0.78],  // In³⁻ 橙色（pH>11.6）
+    complex: { Mg: [150, 40, 90, 0.55], Ca: [150, 32, 56, 0.55] },
+  },
+  '钙指示剂': {
+    // 单段 pKa 描述不了「10~13 蓝、>13.5 自身酒红」这段非单调变色，用显式色标
+    stops: [
+      [10.0, [ 36,  78, 176, 0.62]],  // 最适区间：游离态蓝
+      [13.0, [ 36,  78, 176, 0.62]],
+      // >13.5 自身酒红——**故意与络合色同 RGB**：终点前后都是酒红，
+      // 「酒红→纯蓝」的突变消失，终点判不出来（实验 06 思考题 4 的口径）
+      [13.5, [150, 32, 56, 0.55]],
+    ],
+    complex: { Ca: [150, 32, 56, 0.55] },
+  },
+};
+
+const mixArr = (a, b, k) => [0, 1, 2, 3].map(i => {
+  const v = a[i] + (b[i] - a[i]) * k;
+  return i === 3 ? +v.toFixed(4) : Math.round(v);
+});
+
+const stopsColorLocal = (stops, x) => {
+  if (x <= stops[0][0]) return stops[0][1].slice();
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [x0, c0] = stops[i];
+    const [x1, c1] = stops[i + 1];
+    if (x <= x1) return mixArr(c0, c1, x1 === x0 ? 0 : (x - x0) / (x1 - x0));
+  }
+  return stops[stops.length - 1][1].slice();
+};
+
+/**
+ * 金属指示剂显色。
+ * name：'铬黑T' / '钙指示剂'（与 chem.js 的 METAL_INDICATORS 同名）。
+ * ph 决定游离态颜色；complexed ∈ [0,1]：0 = 全部游离，1 = 全部以 MIn 存在。
+ * metal：'Mg' / 'Ca'——络合色按金属取（铬黑 T 有 Mg/Ca 两档）。
+ */
+export function metalIndicatorColor(name, ph, { complexed = 0, metal = 'Mg' } = {}) {
+  const m = METAL_INDICATOR_MODEL[name];
+  if (!m) return [200, 220, 235, 0.35];
+  let free;
+  if (m.pKa2 != null) {
+    // 两段质子化平衡：酸式 H₂In⁻ → HIn²⁻ → In³⁻
+    const f1 = 1 / (1 + Math.pow(10, ph - m.pKa1));       // 酸式占比
+    const f2 = 1 / (1 + Math.pow(10, ph - m.pKa2));       // 中间体（在已去质子部分中）
+    const wA = f1, wM = (1 - f1) * f2, wB = (1 - f1) * (1 - f2);
+    free = [0, 1, 2, 3].map(i => {
+      const v = m.acid[i] * wA + m.mid[i] * wM + m.base[i] * wB;
+      return i === 3 ? +v.toFixed(4) : Math.round(v);
+    });
+  } else {
+    free = stopsColorLocal(m.stops, ph);
+  }
+  const cx = m.complex[metal] || Object.values(m.complex)[0];
+  return mixArr(free, cx, Math.min(1, Math.max(0, complexed)));
+}
+
 /** 由 pH 求溶液色（未加指示剂时的近无色，强酸强碱下略有色） */
 /**
  * 溶液颜色随 pH 连续变化。
@@ -613,11 +689,13 @@ export class NumberLine {
     this.dots = [];     // [{ value, color }]
     this.xLabel = opts.xLabel || '';
     this.window = opts.window || null;   // 强制 x 范围 [lo,hi]
-    window.addEventListener('resize', () => this.draw());
+    this._onResize = () => this.draw();
+    window.addEventListener('resize', this._onResize);
   }
 
   setBars(bars) { this.bars = bars || []; this.draw(); }
   setDots(dots) { this.dots = dots || []; this.draw(); }
+  destroy() { window.removeEventListener('resize', this._onResize); }
 
   _range() {
     let lo = Infinity, hi = -Infinity;

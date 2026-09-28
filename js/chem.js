@@ -1173,3 +1173,221 @@ export function permanganateTitration({ mSample, purity = 1, cKMnO4, vKMnO4 }) {
     wFe2: nFe2 * AR.Fe / mSample,                       // 以质量分数表示的 Fe²⁺ 含量
   };
 }
+
+/* ============================================================
+ * 课程实验：配位滴定法测定水硬度（实验 06 水质分析·水硬度的测定）
+ *
+ * 数据来源 —— 本课程课件（关键页已渲染原页核对）：
+ *   · 摩尔质量（P33 记录表页眉原值）：CaCO₃ 100.09、CaO 56.08、MgO 40.30
+ *   · EDTA 二钠盐 M = 372.24；配制 0.8 g → 400 mL（P22；旁注「书上 0.01 M，不同！」）
+ *   · P34 范例记录表：基准物 0.0567 g；标定 25.04/25.10/25.12 mL；
+ *     钙 25.36/25.31/25.32 mL；总 29.69/29.88/29.71 mL
+ *     → c(EDTA) 0.00565 mol/L、钙 80.2、总 94.2、Mg 14.0（以 CaO 计）→ 10.1 mg/L（以 MgO 计）
+ *   · 1 °d = 每升 10 mg CaO、饮用水 ≤ 25 °d、分级 4/8/16/30（P3）
+ *   · 金属指示剂（P19/P21）：MgIn⁻ lgK 7.0 > CaIn 5.4；MgY 8.7 < CaY 10.7；
+ *     铬黑 T pKa 6.3 / 11.6；钙指示剂最适 pH 10~13
+ *
+ * 本节全部是纯计量式，可脱离浏览器验算（教师可用计算器逐位核对）。
+ * 操作不规范引起的方向性偏差**不在**这里——由 sims/water-hardness.js 的
+ * model() 施加，并在那里逐项标注为教学标定模型。
+ * ============================================================ */
+
+/** 实验 06 的摩尔质量 / g·mol⁻¹ —— 课件 P33 页眉原值。不进 AR（AR 供与 IUPAC 表核对）。 */
+export const M_WH = { CaCO3: 100.09, CaO: 56.08, MgO: 40.30, Na2EDTA_2H2O: 372.24 };
+
+/**
+ * 镁硬度的基准换算因数 M(MgO)/M(CaO) = 40.30/56.08 = 0.71862。
+ *
+ * 差减法得到的是「以 CaO 表示」的镁硬度，课件（P4/P27）要求再乘此因数
+ * 报成「以 MgO 表示」——P34 范例 14.0 × 0.7186 = 10.1，逐位自洽。
+ * 对应的三个典型错误：忘乘（直接报 14.0）、乘反（14.0 ÷ 0.7186 = 19.5）、
+ * 用错对象（乘到钙硬度上 80.2 × 0.7186 = 57.6）。
+ */
+export const MG_FROM_CAO = M_WH.MgO / M_WH.CaO;
+
+/** EDTA 配制名义浓度：0.8 g / 372.24 g·mol⁻¹ / 0.400 L = 0.0053729（标定前只有 3 位有效数字） */
+export function edtaNominalConcentration({ m = 0.8, v = 400 } = {}) {
+  const n = m / M_WH.Na2EDTA_2H2O;
+  const c = n / (v / 1000);
+  return { n, c, cRounded: Number(c.toFixed(5)), v };
+}
+
+/**
+ * 平行测定的「相对偏差」列（课件 P34 口径）：
+ *   相对偏差_i = (x_i − x̄)/x̄ × 100%（带符号、逐份）
+ *   均值列     = 各相对偏差绝对值的平均（复现课件 0.12 / 0.08 / 0.27）
+ * range / relativeRangePct 供平行性判据用（本模拟器取「相对极差 ≤ 1.0%」，
+ * 课件未规定判据，见 sim 的 modelNote）。
+ * 注意：这不是严格定义的「相对平均偏差」，但课件就是这么列、这样求均值的，照抄以对齐教师计算器。
+ */
+export function relativeMeanDeviation(values) {
+  const average = values.reduce((a, b) => a + b, 0) / values.length;
+  const deviationsPct = values.map(v => (v - average) / average * 100);
+  const meanDeviationPct = deviationsPct.reduce((a, b) => a + Math.abs(b), 0) / deviationsPct.length;
+  const range = Math.max(...values) - Math.min(...values);
+  return { average, deviationsPct, meanDeviationPct, range, relativeRangePct: range / average * 100 };
+}
+
+/**
+ * EDTA 标定（CaCO₃ 基准物）。
+ *   n(每份 Ca²⁺) = m(CaCO₃)/M(CaCO₃) × aliquot/vFlask
+ *   c_i = n / (V_i/1000)；c̄ = 三次 c_i 的算术平均
+ * P34 验算：0.0567 g / 100 mL 定容 / 取 25.00 mL / V = 25.04、25.10、25.12
+ *   → c = 0.00566、0.00564、0.00564；c̄ = 0.00564533；报告 0.00565。
+ * ⚠️ 用 c̄ 继续算硬度时**不要先舍入**成 0.00565——课件 80.3/80.1/80.2
+ *    是用 0.00564533 才复现得出来的（先舍入会得 80.4，对不上）。
+ * ⚠️ 相对偏差列是对 c_i 算的（符号方向与课件 0.19/−0.05/−0.13 一致）；
+ *    全距列给的是滴定体积（0.08 mL），供平行性判据。
+ */
+export function edtaStandardization({
+  mCaCO3 = 0.0567, vFlask = 100.00, aliquot = 25.00,
+  volumes = [25.04, 25.10, 25.12],
+} = {}) {
+  const nCaTotal = mCaCO3 / M_WH.CaCO3;
+  const nAliquot = nCaTotal * (aliquot / vFlask);
+  const c = volumes.map(v => nAliquot / (v / 1000));
+  const cMean = c.reduce((a, b) => a + b, 0) / c.length;
+  const stats = relativeMeanDeviation(c);
+  const vStats = relativeMeanDeviation(volumes);
+  return {
+    nCaTotal, nAliquot, c, cMean, volumes,
+    reportedC: Number(cMean.toFixed(5)),
+    deviationsPct: stats.deviationsPct,
+    meanDeviationPct: stats.meanDeviationPct,
+    range: vStats.range,
+    relativeRangePct: vStats.relativeRangePct,
+  };
+}
+
+/**
+ * 由 EDTA 消耗体积求硬度，以 basis（CaO / MgO）表示。
+ *   ρ = V(mL)/1000 × c(mol/L) × M(g/mol) × 1000(mg/g) ÷ (V水样(mL)/1000 L)
+ * 100.00 mL 水样时化简为 ρ = V × c × M × 10。
+ * 舍入到 0.1 mg/L 发生在调用方（课件是先逐份舍入、再取平均）。
+ */
+export function hardnessFromEDTA({ vEDTA, cEDTA, vSample = 100.00, basis = 'CaO' }) {
+  const M = M_WH[basis];
+  if (!M) throw new Error(`未知硬度基准 ${basis}（可用 CaO / MgO）`);
+  return (vEDTA / 1000) * cEDTA * M * 1000 / (vSample / 1000);
+}
+
+/** 德国度：1 °d = 每升 10 mg CaO（课件 P3）。 */
+export const germanDegrees = mgPerLCaO => mgPerLCaO / 10;
+
+/**
+ * 水的硬度分级（课件 P3 原表）：
+ *   0~4 极软水 / 4~8 软水 / 8~16 微硬水 / 16~30 硬水 / >30 极硬水；
+ * 生活饮用水要求不超过 25 °d。恰好落在档界时归入较硬的一档。
+ */
+export function hardnessGrade(degrees) {
+  const grade = degrees <= 4 ? '极软水' : degrees <= 8 ? '软水' : degrees <= 16 ? '微硬水'
+    : degrees <= 30 ? '硬水' : '极硬水';
+  return { grade, potable: degrees <= 25 };
+}
+
+/**
+ * 一份水样中 Ca²⁺/Mg²⁺ 的分析浓度（mol/L），供符号层算 lg(c·K′)。
+ * 硬度（以 CaO 计, mg/L）÷ M(CaO) ÷ 1000 即得金属离子浓度——
+ * Ca²⁺、Mg²⁺ 与 EDTA 都是 1:1，镁的 CaO 当量摩尔数就是 n(Mg²⁺)。
+ */
+export function hardnessIonConcentrations({ mgPerLCaO_ca, mgPerLCaO_total }) {
+  return {
+    cCa: mgPerLCaO_ca / M_WH.CaO / 1000,
+    cMg: (mgPerLCaO_total - mgPerLCaO_ca) / M_WH.CaO / 1000,
+  };
+}
+
+/**
+ * 顶层组装：三组读数一次算完（sim 的 model() 直接调用）。
+ * 复现课件 P34 的两处口径：
+ *   · 硬度的「平均值」= 逐份舍入到 0.1 mg/L 后再平均（80.2 / 94.2）
+ *   · 「相对偏差」列 = 对未舍入的逐份值算（钙 0.12/−0.08/−0.04 均值 0.08）
+ */
+export function waterHardnessReport({ cEDTA, vSample = 100.00, vCa = [], vTotal = [] }) {
+  const group = volumes => {
+    const values = volumes.map(v => hardnessFromEDTA({ vEDTA: v, cEDTA, vSample }));
+    const reported = values.map(v => Number(v.toFixed(1)));
+    const mean = Number((reported.reduce((a, b) => a + b, 0) / reported.length).toFixed(1));
+    const stats = relativeMeanDeviation(values);      // 相对偏差列（未舍入值）
+    const vStats = relativeMeanDeviation(volumes);    // 全距与相对极差（体积口径）
+    return {
+      volumes, values, reported, mean,
+      deviationsPct: stats.deviationsPct,
+      meanDeviationPct: stats.meanDeviationPct,
+      range: vStats.range,
+      relativeRangePct: vStats.relativeRangePct,
+      ok: vStats.relativeRangePct <= 1.0,             // 教学参照线（课件未规定）
+    };
+  };
+  const ca = group(vCa);
+  const tot = group(vTotal);
+  const byCaO = Number((tot.mean - ca.mean).toFixed(1));      // 94.2 − 80.2 = 14.0
+  const mgO = byCaO * MG_FROM_CAO;
+  const degreesTotal = Number(germanDegrees(tot.mean).toFixed(2));
+  const grade = hardnessGrade(degreesTotal);
+  const cIon = hardnessIonConcentrations({ mgPerLCaO_ca: ca.mean, mgPerLCaO_total: tot.mean });
+  const mgResidual = residualMagnesiumAtPH({ ph: 12 });
+  const lgKCa = METALS.find(m => m.name === 'Ca²⁺').lgK;
+  const lgKMg = METALS.find(m => m.name === 'Mg²⁺').lgK;
+  return {
+    ca, tot,
+    mg: {
+      byCaO,
+      factor: MG_FROM_CAO,
+      mgO,
+      reportedMgO: Number(mgO.toFixed(1)),
+      wrongNoConvert: byCaO,
+      wrongInverted: Number((byCaO / MG_FROM_CAO).toFixed(1)),
+      wrongOnCalcium: Number((ca.mean * MG_FROM_CAO).toFixed(1)),
+    },
+    degrees: { total: degreesTotal, calcium: Number(germanDegrees(ca.mean).toFixed(2)) },
+    grade: grade.grade,
+    potable: grade.potable,
+    // 符号层「为什么这么滴」的判据（模拟器实算后显示，勿写死）
+    window: {
+      lgKpCa10: conditionalLgK(lgKCa, 10), lgKpMg10: conditionalLgK(lgKMg, 10),
+      lgKpCa12: conditionalLgK(lgKCa, 12), lgKpMg12: conditionalLgK(lgKMg, 12),
+      cCa: cIon.cCa, cMg: cIon.cMg,
+      lgCKpCa10: conditionalLgK(lgKCa, 10) + Math.log10(cIon.cCa),
+      lgCKpMg10: conditionalLgK(lgKMg, 10) + Math.log10(cIon.cMg),
+      mgResidual: mgResidual.cMgResidual,
+      lgCKpMg12: conditionalLgK(lgKMg, 12) + Math.log10(mgResidual.cMgResidual),
+    },
+  };
+}
+
+/**
+ * Mg(OH)₂ 沉淀隐蔽后残余的 [Mg²⁺]（解释 pH 12 为什么能只测钙）。
+ *   [Mg²⁺] = Ksp(Mg(OH)₂)/[OH⁻]²，[OH⁻] = 10^(pH−14)
+ * Ksp = 5.61×10⁻¹²（常见教材附录/CRC 值；有版本记 1.8×10⁻¹¹——两种取值下
+ * 「lg(c·K′) ≪ 6、Mg 彻底退出滴定」的结论都成立，只影响此处的量级显示）。
+ */
+export function residualMagnesiumAtPH({ ph, kspMgOH2 = 5.61e-12 }) {
+  const oh = Math.pow(10, ph - 14);
+  const cMgResidual = kspMgOH2 / (oh * oh);
+  return { oh, cMgResidual, lgCMg: Math.log10(cMgResidual) };
+}
+
+/**
+ * 金属指示剂（配位滴定用）——与上面的酸碱指示剂 INDICATORS **不是一类**：
+ * 络合色 MIn 是「金属-指示剂络合物」的颜色，不是指示剂自身的酸式/碱式色，
+ * 两型体模型表达不了（铬黑 T 在 pH 10 若按两型体算会得「橙色」，化学上错误）。
+ * 故单列一张表，INDICATORS 保持原样（titration.js 用它铺酸碱指示剂下拉框）。
+ * 数据出处：实验 06 课件 P19/P21 原值。
+ */
+export const METAL_INDICATORS = [
+  {
+    name: '铬黑T', abbr: 'EBT', pKa1: 6.3, pKa2: 11.6,
+    acidColor: '紫色', midColor: '蓝色', baseColor: '橙色',
+    optimal: '6.3~11.6',
+    complex: { Mg: { lgK: 7.0, color: '紫红' }, Ca: { lgK: 5.4, color: '酒红' } },
+    note: 'pH<6.3 呈紫红色、与 MIn 颜色相近，终点不易判断；pH>11.6 呈橙色。',
+  },
+  {
+    name: '钙指示剂', abbr: 'NN', pKa1: 12.4, pKa2: null,
+    acidColor: '暗红', midColor: '蓝色', baseColor: '酒红',
+    optimal: '10~13',
+    complex: { Ca: { lgK: 5.4, color: '酒红' } },
+    note: 'pH>13.5 时指示剂自身呈酒红色、与 CaIn 同色，终点突变消失（实验 06 思考题 4 的口径）。',
+  },
+];

@@ -930,6 +930,205 @@ export function comparisonTube(ctx, box, o = {}) {
   ctx.restore();
 }
 
+/**
+ * 试剂瓶。本项目第一次画试剂瓶——此前各 sim 都用容量瓶或烧杯冒充，
+ * 但试剂瓶有收口瓶颈、肩、螺口盖/磨口塞和标签区，冒充不了。
+ *
+ * o.shape 三种形态（自然宽高比不同，必须走 fitAspect）：
+ *   'narrow' 细口瓶（液体试剂，默认）h/w ≈ 2.35
+ *   'wide'   广口瓶（固体试剂）      h/w ≈ 1.65
+ *   'drop'   滴瓶（指示剂液体，带尖嘴滴头与胶帽）h/w ≈ 2.60
+ * o = { shape, liquid, solid, level, cap: 'screw'|'stopper', brown,
+ *       label: ['EDTA 标液', '0.005 M'], labelTone: 'light'|'amber' }
+ * 液位只按瓶身有效容积算、封顶在肩以下（conicalFlask 那条规矩同样适用）。
+ */
+export function reagentBottle(ctx, box, o = {}) {
+  const shape = o.shape || 'narrow';
+  const aspect = shape === 'wide' ? 1.65 : shape === 'drop' ? 2.60 : 2.35;
+  const b = fitAspect(box, aspect, 'bottom');
+  const { x, y, w, h } = b;
+  const neckW = w * (shape === 'wide' ? 0.62 : 0.36);
+  const nx = x + (w - neckW) / 2;
+  const neckH = h * (shape === 'wide' ? 0.10 : 0.20);
+  const bodyTop = y + h * (shape === 'wide' ? 0.22 : 0.34);
+  const r = Math.min(6, w * 0.10);
+
+  const path = c => {
+    c.moveTo(nx, y);
+    c.lineTo(nx, y + neckH);
+    c.quadraticCurveTo(nx, bodyTop, x, bodyTop);            // 左肩：先竖直、再外张
+    c.lineTo(x, y + h - r);
+    c.quadraticCurveTo(x, y + h, x + r, y + h);
+    c.lineTo(x + w - r, y + h);
+    c.quadraticCurveTo(x + w, y + h, x + w, y + h - r);
+    c.lineTo(x + w, bodyTop);
+    c.quadraticCurveTo(x + w, bodyTop, nx + neckW, y + neckH);
+    c.lineTo(nx + neckW, y);
+  };
+
+  // 液位：瓶身有效高度 = 底到肩线，封顶 0.94 防止灌进瓶颈
+  const bodyH = y + h - bodyTop;
+  const filled = Math.min(1, Math.max(0, o.level ?? 0)) * 0.94 * bodyH;
+  vessel(ctx, path, b, { ...o, level: filled / h });
+
+  // 广口瓶的固体粉末：瓶底一小丘；颗粒坐标用 R2 序列（crystals 的教训）
+  if (o.solid && (o.level ?? 0) > 0.01) {
+    const moundH = bodyH * 0.30 * Math.min(1, o.level);
+    const n = Math.round(10 + 26 * Math.min(1, o.level));
+    ctx.save();
+    ctx.fillStyle = rgba(o.solid);
+    for (let i = 0; i < n; i++) {
+      const u = (i * 0.7548776662466927) % 1;
+      const v = (i * 0.5698402909980532) % 1;
+      const ux = 0.10 + 0.80 * u;
+      const taper = Math.sin(Math.PI * ux);                 // 边缘薄、中间厚
+      const gx = x + w * ux;
+      const gy = y + h - 2 - moundH * taper * (0.15 + 0.85 * v);
+      ctx.beginPath();
+      ctx.arc(gx, gy, 1.3 + 2.0 * v, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 棕色瓶：瓶身叠一层棕调 + 轮廓换暖色
+  if (o.brown) {
+    ctx.save();
+    ctx.beginPath();
+    path(ctx);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(122,72,32,0.20)';
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    path(ctx);
+    ctx.strokeStyle = 'rgba(168,124,84,0.55)';
+    ctx.lineWidth = GLASS.lw;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 标签区（最多两行，字号自动缩小以放进纸面，不溢出）
+  if (o.label && o.label.length) {
+    const lw = w * 0.72, lh = Math.min(h * 0.26, w * 0.72);
+    const lx = x + (w - lw) / 2, ly = bodyTop + bodyH * 0.16;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(lx, ly, lw, lh, 2) : ctx.rect(lx, ly, lw, lh);
+    ctx.fillStyle = o.labelTone === 'amber' ? 'rgba(228,214,170,0.88)' : 'rgba(232,232,226,0.86)';
+    ctx.fill();
+    ctx.clip();
+    const lines = o.label.slice(0, 2);
+    let fs = Math.max(8, Math.round(w * 0.15));
+    ctx.font = `600 ${fs}px "PingFang SC", sans-serif`;
+    for (const t of lines) {
+      while (fs > 6 && ctx.measureText(t).width > lw - 6) {
+        fs -= 1;
+        ctx.font = `600 ${fs}px "PingFang SC", sans-serif`;
+      }
+    }
+    ctx.fillStyle = 'rgba(40,46,52,0.9)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((t, i) => {
+      ctx.fillText(t, lx + lw / 2, ly + lh * (lines.length === 1 ? 0.5 : 0.30 + 0.40 * i));
+    });
+    ctx.restore();
+  }
+
+  // 封口：螺口盖 / 玻璃磨口塞 / 滴瓶的滴头
+  const capH = Math.max(5, w * 0.11);
+  ctx.save();
+  if (shape === 'drop') {
+    // 滴头：颈口上收成细尖，再套一个小胶帽
+    const tipH = h * 0.045;
+    ctx.beginPath();
+    ctx.moveTo(nx, y);
+    ctx.lineTo(nx + neckW, y);
+    ctx.lineTo(nx + neckW * 0.70, y - tipH);
+    ctx.lineTo(nx + neckW * 0.30, y - tipH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(190,210,220,0.22)';
+    ctx.fill();
+    ctx.strokeStyle = GLASS.stroke;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y - tipH - w * 0.11, neckW * 0.62, w * 0.12, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(130,66,76,0.92)';
+    ctx.fill();
+  } else if (o.cap === 'stopper') {
+    ctx.beginPath();
+    ctx.moveTo(nx - 2, y);
+    ctx.lineTo(nx + neckW + 2, y);
+    ctx.lineTo(nx + neckW * 0.72, y - capH);
+    ctx.lineTo(nx + neckW * 0.28, y - capH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(190,210,220,0.22)';
+    ctx.fill();
+    ctx.strokeStyle = GLASS.stroke;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(nx - 2.5, y - capH, neckW + 5, capH, 2)
+                  : ctx.rect(nx - 2.5, y - capH, neckW + 5, capH);
+    ctx.fillStyle = 'rgba(60,68,76,0.95)';
+    ctx.fill();
+    ctx.strokeStyle = GLASS.stroke;
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  return { box: b, mouth: { x: nx + neckW / 2, y } };
+}
+
+/**
+ * 洗耳球（吸球）——课件：移取 100.00 mL 水样「用手动助吸器或洗耳球都可以」，
+ * 这里画洗耳球。梨形：底宽、腰收、顶接短嘴。
+ * o = { squeeze: 0~1, angle }；squeeze 把球体横向压一压，表示正在吸液。
+ */
+export function washBulb(ctx, box, o = {}) {
+  const b = fitAspect(box, 1.20, 'center');
+  const { x, y, w, h } = b;
+  const sq = Math.min(1, Math.max(0, o.squeeze || 0));
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(o.angle || 0);
+  ctx.scale(1 - 0.12 * sq, 1);
+  const hw = w / 2, hh = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(0, hh);
+  ctx.bezierCurveTo(hw * 1.02, hh, hw * 0.86, hh * 0.10, hw * 0.40, -hh * 0.52);
+  ctx.lineTo(hw * 0.24, -hh * 0.78);
+  ctx.lineTo(-hw * 0.24, -hh * 0.78);
+  ctx.lineTo(-hw * 0.40, -hh * 0.52);
+  ctx.bezierCurveTo(-hw * 0.86, hh * 0.10, -hw * 1.02, hh, 0, hh);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(56,62,70,0.94)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(150,166,180,0.55)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  // 高光弧：模拟橡胶反光（stirringRod 同款双层画法）
+  ctx.beginPath();
+  ctx.ellipse(-hw * 0.34, hh * 0.10, hw * 0.22, hh * 0.42, 0.25, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  // 短嘴
+  ctx.beginPath();
+  ctx.moveTo(0, -hh * 0.78);
+  ctx.lineTo(0, -hh * 1.06);
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+  return { box: b };
+}
+
 /* ============================================================
  * 台面设备
  * ============================================================ */
@@ -1139,6 +1338,39 @@ export function steam(ctx, box, t, intensity = 1) {
     ctx.beginPath();
     ctx.fillStyle = `rgba(210,225,235,${a})`;
     ctx.ellipse(sx + Math.sin(ph * 6 + i) * 5, sy, 5 + 9 * ph, 3 + 5 * ph, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * 絮状沉淀（Mg(OH)₂、CaCO₃ 等）——为什么不复用 crystals：
+ *   · 形状是柔软的絮团（圆弧团块交叠），不是单斜晶多边形与硬边高光
+ *   · 运动是缓慢下沉、各自停在不同的高度（浑浊感）；不旋转
+ *   · 半透明白色
+ * 落点用 R2 低差异序列；⚠️ 两个乘数不能成简单线性关系（crystals 的教训）。
+ * amount ∈ [0,1]；o = { color, settle: true 时直接落在最终位置（跳过下沉动画） }
+ */
+export function precipitateFlocs(ctx, box, t, amount = 0, o = {}) {
+  if (amount <= 0.005) return;
+  const a = Math.min(1, amount);
+  const col = o.color || [226, 236, 244, 0.32 * a];
+  const n = Math.round(4 + 16 * a);
+  ctx.save();
+  ctx.fillStyle = rgba(col);
+  for (let i = 0; i < n; i++) {
+    const u = (i * 0.7548776662466927) % 1;
+    const v = (i * 0.5698402909980532) % 1;
+    const cx0 = box.x + box.w * (0.08 + 0.84 * u);
+    const restY = box.y + box.h * (0.42 + 0.52 * v);        // 各自停在不同的高度 → 浑浊感
+    const p = o.settle ? 1 : Math.min(1, t * 0.09 + i * 0.021);
+    const cy = box.y + box.h * 0.06 + (restY - (box.y + box.h * 0.06)) * p;
+    const cx = cx0 + Math.sin(t * 0.5 + i * 1.3) * 2.0;     // 轻微横漂
+    const s = 2.0 + 3.0 * v;
+    ctx.beginPath();
+    ctx.arc(cx, cy, s, 0, Math.PI * 2);
+    ctx.arc(cx + s * 0.75, cy - s * 0.35, s * 0.62, 0, Math.PI * 2);
+    ctx.arc(cx - s * 0.62, cy + s * 0.42, s * 0.58, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();

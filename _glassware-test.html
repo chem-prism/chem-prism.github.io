@@ -61,6 +61,22 @@ const items = [
     [b.x + 8, b.y + b.h * 0.72], [b.x + b.w * 0.38, b.y + b.h * 0.72],
     [b.x + b.w * 0.38, b.y + b.h * 0.30], [b.x + b.w - 8, b.y + b.h * 0.30],
   ], { width: 6 })],
+
+  ['试剂瓶 细口',      (c, b) => G.reagentBottle(c, b, {
+    liquid: [222, 232, 240, 0.20], level: 0.62, label: ['EDTA 标液', '0.005 M'] })],
+  ['试剂瓶 广口棕',    (c, b) => G.reagentBottle(c, b, {
+    shape: 'wide', solid: [168, 62, 84, 0.78], level: 0.45,
+    label: ['钙指示剂'], labelTone: 'amber', cap: 'stopper', brown: true })],
+  ['滴瓶 铬黑T',       (c, b) => G.reagentBottle(c, b, {
+    shape: 'drop', liquid: [70, 60, 120, 0.55], level: 0.50, label: ['铬黑T'] })],
+  ['洗耳球 + 移液管',  (c, b) => {
+    G.washBulb(c, { x: b.x + 6, y: b.y + b.h * 0.30, w: 44, h: 53 }, { squeeze: 0.4 });
+    G.pipette(c, { x: b.x + 34, y: b.y + b.h * 0.26, w: b.w - 40, h: 26 }, { angle: Math.PI / 2 });
+  }],
+  ['絮状沉淀 Mg(OH)₂', (c, b) => {
+    G.conicalFlask(c, b, { liquid: [214, 220, 228, 0.30], level: 0.40 });
+    G.precipitateFlocs(c, { x: b.x + b.w * 0.22, y: b.y + b.h * 0.42, w: b.w * 0.56, h: b.h * 0.52 }, 1.5, 0.8);
+  }],
 ];
 
 const ROWS = Math.ceil(items.length / COLS);

@@ -1,6 +1,6 @@
 # 化学三棱镜 · 探究工作台
 
-分析化学三重表征探究工作台的部署站点。二十三组可交互模拟器，覆盖教材全部主干：四大滴定、电化学、光谱与质谱、色谱与分离、空间结构、数据与质量，以及五个课程实验过程模拟器。访问：**https://chem-prism.github.io/**
+分析化学三重表征探究工作台的部署站点。二十四组可交互模拟器，覆盖教材全部主干：四大滴定、电化学、光谱与质谱、色谱与分离、空间结构、数据与质量，以及六个课程实验过程模拟器。访问：**https://chem-prism.github.io/**
 
 零依赖的静态站点，纯 ES Module + Canvas，无需构建步骤。可直接被教学智能体以 iframe 嵌入。
 
@@ -20,7 +20,7 @@
 指示剂颜色按两型体比例 `1/(1+10^(pKa−pH))` 连续渐变，
 顺带把「变色为什么是一个区间而不是某一点」也讲清楚了。
 
-## 二十三组模拟器
+## 二十四组模拟器
 
 | 模拟器 | 波长 | 教学指向 |
 |---|---|---|
@@ -47,6 +47,7 @@
 | 反应级数、速率及活化能 | 实验十五 | **过程型**：淀粉显蓝计时、1:2 计量关系、离子强度、级数和 Arrhenius 拟合 |
 | 硫酸亚铁铵中 Fe²⁺ 含量 | 实验四十之二 | **过程型**：KMnO₄ 标定、“三度一点”、自身指示剂和 Fe²⁺ 含量 |
 | 滴定分析基本操作练习 | 实验三十一 | **过程型**：移液管/滴定管润洗、排泡、视线、半滴、终点保持和平行性 |
+| 水硬度的测定 | 实验 06 | **过程型**：沉淀隐蔽法测钙、氨性缓冲测总量、差减求镁、MgO 换算 0.7186、德国度分级 |
 
 ## 任务模式（供智能体派发）
 
@@ -80,6 +81,7 @@ https://chem-prism.github.io/?sim=<模拟器>&<参数键值>&task=<任务说明>
 | `kinetics` | `mode`、`step`（0~7）、`run=1`；`kiVolume`、`persulfateVolume`、`thioVolume`、`temperatureC`、`ionicStrengthFixed`、`persulfateLast`、`additionDelayS`、`mixing` |
 | `fe2-assay` | `mode`、`step`（0~7）、`run=1`；`mNa2C2O4`、`vKMnO4Std`、`Tstd`、`acidStd`、`speedStd`、`holdStd`、`mSample`、`vFe1`、`vFe2`、`vFe3`、`acidFe`、`speedFe`、`holdFe` |
 | `titration-practice` | `mode`、`step`（0~7）、`run=1`；`pipetteRinse`、`buretteRinse`、`bubblesPurged`、`eyeLevel`、`wallWashed`、`endpointHoldS` |
+| `water-hardness` | `mode`、`step`（0~9）、`run=1`；`mCaCO3`、`vStdMean`、`preAddEDTA`、`bufferStd`、`samplePipette`、`vNaOHCa`、`vCaMean`、`mgEDTA`、`bufferTotal`、`vTotalMean`、`masking`、`titrateSpeed`、`endpointHoldS`、`mgReport` |
 
 > 上表只列了常用的一部分。**完整参数键以 `智雅搭建/skills/chem-workbench/SKILL.md` 的对照表为准**——那份是给智能体派任务用的，覆盖面最全。
 
@@ -97,7 +99,7 @@ js/chem.js              化学计算内核（可单独用 node 验算）
 js/chart.js             Canvas 绘图内核
 js/views.js             三层视图组件（烧杯、粒子场、比色皿、数轴、球棍模型）
 js/glassware.js         玻璃仪器绘制库（锥形瓶、漏斗、蒸发皿、水浴锅、布氏漏斗…）
-js/sims/*.js            二十三个模拟器
+js/sims/*.js            二十四个模拟器
 ```
 
 ## 数值可靠性
