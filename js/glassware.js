@@ -27,6 +27,17 @@ export const GLASS = {
   lw: 1.6,
 };
 
+/**
+ * 玻璃色，只给透明度。
+ *
+ * 有 4 个参数型模拟器（aas / chromatography / extraction / gravimetry）需要自己
+ * 画一小块玻璃，各自抄了一遍 `rgba(160,180,196,x)`。色相重复了 22 次，
+ * 但**透明度是有意的**——0.10 的浅阴影到 0.7 的高光，共 12 档，各不相同。
+ * 所以这里只收敛色相、保留各自的 alpha，不要图省事一并替成 GLASS.stroke/soft，
+ * 那会把刻意做出来的层次压平。
+ */
+export const glassColor = (a) => `rgba(160,180,196,${a})`;
+
 const cssVar = (name, fallback) => {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -55,12 +66,12 @@ export function vessel(ctx, pathFn, box, o = {}) {
   const { liquid, level = 0, lw = GLASS.lw, stroke = GLASS.stroke, highlight = true, tilt = 0 } = o;
 
   if (liquid && level > 0.002) {
+    const [lr, lg, lb, la = 1] = liquid;
     ctx.save();
     ctx.beginPath();
     pathFn(ctx);
     ctx.clip();
     const yTop = box.y + box.h * (1 - Math.min(1, level));
-    ctx.fillStyle = rgba(liquid);
 
     if (Math.abs(tilt) > 1e-4) {
       /*
@@ -73,29 +84,81 @@ export function vessel(ctx, pathFn, box, o = {}) {
       const span = (box.w + box.h) * 2;
       ctx.translate(box.x + box.w / 2, yTop);
       ctx.rotate(-tilt);
+      // 倾斜时用纯色（渐变会跟坐标系走，失去纵深感）
+      ctx.fillStyle = rgba(liquid);
       ctx.fillRect(-span, 0, span * 2, span);
     } else {
+      // 液体纵向渐变：顶部略淡、底部略深，模拟光线从上方射入的纵深感
+      const liqGrad = ctx.createLinearGradient(0, yTop, 0, box.y + box.h);
+      liqGrad.addColorStop(0, `rgba(${lr},${lg},${lb},${la * 0.78})`);
+      liqGrad.addColorStop(1, `rgba(${lr},${lg},${lb},${Math.min(la * 1.08, 1)})`);
+      ctx.fillStyle = liqGrad;
       ctx.fillRect(box.x - 2, yTop, box.w + 4, box.h - (yTop - box.y) + 4);
     }
 
-    // 液面高光
+    // 液面效果：弯月面椭圆 + 高光线
     if (highlight) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
       if (Math.abs(tilt) > 1e-4) {
+        // 倾斜时保持原来的直线高光（已在旋转坐标系里）
         const span = (box.w + box.h);
+        ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
         ctx.moveTo(-span, 0);
         ctx.lineTo(span, 0);
+        ctx.stroke();
       } else {
-        ctx.moveTo(box.x - 2, yTop);
-        ctx.lineTo(box.x + box.w + 2, yTop);
+        /*
+         * 正立时：弯月面（凹面朝上）。
+         *
+         * 玻璃中的水被器壁"拉高"、管心最低——滴定读数读的就是这个最低点
+         * （实验三十一：视线与弯液面最低点同高）。所以弧线必须是"微笑"形。
+         *
+         * ⚠️ ellipse 的第 8 个参数 counterclockwise 必须给 true。
+         * 默认 false 时从 π 走到 0 会绕椭圆**上半周**，弧顶反而比两端高，
+         * 画出来是"皱眉"形——方向刚好反了（已用像素实测确认）。
+         */
+        const meniscusRy = Math.max(2.5, Math.min(5, box.w * 0.04));
+        const meniscusRx = box.w * 0.42;
+        ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.ellipse(
+          box.x + box.w / 2, yTop,
+          meniscusRx, meniscusRy,
+          0, Math.PI, 0, true   // true → 走下半周：两端高、中心低
+        );
+        ctx.stroke();
+        // 液面下方一条细高光线增强分界感
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(box.x + box.w * 0.08, yTop + meniscusRy);
+        ctx.lineTo(box.x + box.w * 0.92, yTop + meniscusRy);
+        ctx.stroke();
       }
-      ctx.stroke();
     }
     ctx.restore();
   }
 
+  /*
+   * 这里**故意不画接触阴影**。
+   *
+   * 曾经在 vessel() 里加过一道椭圆软阴影（ctx.filter='blur(5px)'），实测有三个问题，
+   * 所以撤掉了，不是忘了——
+   *   1. 看不见：在场景底色 #111a20（R=17）上最暗只压到 R=14，Δ3/255。
+   *      就算把 alpha 提到 0.6、blur 降到 3 也只有很淡的一块，等于白付开销。
+   *   2. 跟着歪：调用方 rotate(tilt) 之后，阴影也进了旋转坐标系，
+   *      倾倒的量筒底下会甩出一道斜的暗条（已实测）。
+   *   3. 放错层：vessel() 只拿到一个矩形框，无从知道器皿底下是什么。
+   *      夹在铁架台上的滴定管、拿在手上的移液管、温度计，底部都不接触台面，
+   *      给它们画"坐在台面上"的阴影本身就是错的。
+   *
+   * 「器皿落在台面上」是**场景**才知道的事，所以在场景层解决：
+   * 见本文件末尾的 BENCH_Y 与 drawBench()。
+   */
+
+  // 玻璃描边
   ctx.save();
   ctx.beginPath();
   pathFn(ctx);
@@ -105,6 +168,23 @@ export function vessel(ctx, pathFn, box, o = {}) {
   ctx.lineCap = 'round';
   ctx.stroke();
   ctx.restore();
+
+  // 玻璃左壁渐变高光：screen 合成模式叠一道竖向白色渐变，模拟玻璃左侧的透光
+  if (liquid && level > 0.002 && !o.noGlassSheen) {
+    const sheenGrad = ctx.createLinearGradient(box.x, 0, box.x + box.w, 0);
+    sheenGrad.addColorStop(0,    'rgba(255,255,255,0)');
+    sheenGrad.addColorStop(0.18, 'rgba(255,255,255,0.13)');
+    sheenGrad.addColorStop(0.32, 'rgba(255,255,255,0.04)');
+    sheenGrad.addColorStop(1,    'rgba(255,255,255,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.beginPath();
+    pathFn(ctx);
+    ctx.clip();
+    ctx.fillStyle = sheenGrad;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.restore();
+  }
 }
 
 /**
@@ -1087,6 +1167,40 @@ export const IRON_POWDER_COLOR = [104, 110, 118, 0.92];
 
 /** 无色溶液（酸、水、乙醇） */
 export const CLEAR_COLOR = [222, 232, 240, 0.20];
+
+/* ============================================================
+ * 场景台面
+ * ============================================================ */
+
+/**
+ * 台面线在画布高度里的比例。
+ *
+ * 「器皿坐在台面上」是场景层的事，不该塞进 vessel()——那里只拿到一个矩形框，
+ * 分不清锥形瓶和夹在铁架台上的滴定管（详见 vessel() 里的说明）。
+ * 5 个过程型模拟器原先各写各的 `H * 0.88`，数值虽然一样，但改一处就会漂，
+ * 所以统一到这里。
+ */
+export const BENCH_Y = 0.88;
+
+/**
+ * 画台面线。所有「放在台面上」的器皿都应让它底边落在 H * BENCH_Y 上。
+ * onBench(w, h) 帮助函数按这个比例反推器皿的 y。
+ */
+export function drawBench(ctx, W, H) {
+  const y = H * BENCH_Y;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,180,196,0.16)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.06, y);
+  ctx.lineTo(W * 0.94, y);
+  ctx.stroke();
+  ctx.restore();
+  return y;
+}
+
+/** 把高 h 的器皿贴到台面线上，返回它的顶边 y */
+export function onBench(H, h) { return H * BENCH_Y - h; }
 
 /* ============================================================
  * 场景画布

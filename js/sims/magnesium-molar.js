@@ -11,6 +11,7 @@ import { mountLab } from './lab-shell.js';
 import {
   balance, testTube, gasMeasuringTube, retortStand, tubing, thermometer,
   bubbles, CLEAR_COLOR, IRON_POWDER_COLOR,
+  drawBench,
 } from '../glassware.js';
 
 export const meta = {
@@ -56,10 +57,8 @@ const STEPS = [
 ];
 
 function draw(ctx, W, H, t, i, r, ops) {
-  const B = H * 0.88;
+  const B = drawBench(ctx, W, H);   // 台面线统一在 glassware.js 的 BENCH_Y
   const cx = W / 2;
-  ctx.strokeStyle = 'rgba(160,180,196,0.16)';
-  ctx.beginPath(); ctx.moveTo(W * 0.06, B); ctx.lineTo(W * 0.94, B); ctx.stroke();
   if (i === -1) {
     retortStand(ctx, { x: cx - 170, y: H * 0.14, w: 120, h: H * 0.70 });
     testTube(ctx, { x: cx - 80, y: B - 125, w: 40, h: 125 }, { liquid: CLEAR_COLOR, level: 0.25 });

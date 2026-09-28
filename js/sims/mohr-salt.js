@@ -13,6 +13,7 @@ import {
   evapDish, buchner, suctionFlask, watchGlass, comparisonTube,
   stirringRod, bubbles, crystals, steam,
   ferrousSolutionColor, MOHR_CRYSTAL_COLOR, IRON_POWDER_COLOR, CLEAR_COLOR,
+  drawBench,
 } from '../glassware.js';
 
 export const meta = {
@@ -153,9 +154,8 @@ function species(i, r) {
 }
 
 function draw(ctx, W, H, t, i, r, ops) {
-  const B = H * 0.88, cx = W / 2;
-  ctx.strokeStyle = 'rgba(160,180,196,0.16)';
-  ctx.beginPath(); ctx.moveTo(W * 0.06, B); ctx.lineTo(W * 0.94, B); ctx.stroke();
+  const B = drawBench(ctx, W, H);   // 台面线统一在 glassware.js 的 BENCH_Y
+  const cx = W / 2;
   const solution = ferrousSolutionColor(r.mgFe3 || 0);
   if (i === -1) {
     conicalFlask(ctx, { x: cx - 190, y: B - H * 0.48, w: 110, h: H * 0.48 }, { liquid: CLEAR_COLOR, level: 0.1 });

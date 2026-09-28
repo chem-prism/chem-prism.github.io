@@ -10,6 +10,42 @@
 
 import { resolveColor } from './chart.js';
 
+/** 将 [r,g,b,a] 颜色按比例 k 压暗（k ∈ [0,1]），用于粒子阴影侧。
+ *  注意：本文件另有一个 darken(hex,k)（第 ~890 行，接收字符串），不要混用。 */
+function darkenArr(color, k) {
+  const t = Math.max(0, Math.min(1, k));
+  const c = Array.isArray(color) ? color : [128, 160, 180, 1];
+  return [
+    Math.round(c[0] * (1 - t)),
+    Math.round(c[1] * (1 - t)),
+    Math.round(c[2] * (1 - t)),
+    c[3] ?? 1,
+  ];
+}
+
+/** 将 css 颜色字符串解析为 [r,g,b,a] 数组（用于粒子渐变的暗色端）
+ *
+ *  ⚠️ 必须同时认 #rrggbb 和 rgb()/rgba() 两种写法。
+ *  resolveColor() 对非 var() 的颜色是**原样返回**的，而 sims 里粒子颜色基本都写成
+ *  hex（'#e05a4f'、'#2fb3a3'…）。早期版本只匹配 rgb()，于是所有粒子的暗部
+ *  统统退化成了同一个固定灰，球感的边缘色跟粒子本身无关。
+ */
+function parseColor(colorStr) {
+  if (typeof colorStr !== 'string') return [128, 160, 180, 1];
+  const s = colorStr.trim();
+  if (s.startsWith('#')) {
+    const t = s.slice(1);
+    const hex = t.length === 3 ? t.split('').map(ch => ch + ch).join('') : t.slice(0, 6);
+    if (hex.length >= 6 && /^[0-9a-f]{6}$/i.test(hex)) {
+      return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), 1];
+    }
+    return [128, 160, 180, 1];
+  }
+  const m = s.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s]+([\d.]+))?\s*\)/);
+  if (m) return [+m[1], +m[2], +m[3], m[4] != null ? +m[4] : 1];
+  return [128, 160, 180, 1];
+}
+
 const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
 
 export function fit(canvas) {
@@ -59,10 +95,38 @@ export function indicatorColor(name, ph) {
 }
 
 /** 由 pH 求溶液色（未加指示剂时的近无色，强酸强碱下略有色） */
+/**
+ * 溶液颜色随 pH 连续变化。
+ *
+ * 早先是三档 if（<2 暖、>12 冷、其余近无色），在 pH=2 和 pH=12 处会**硬跳**
+ * ——滴定曲线一路滴过去，颜色突变一次，看着像 bug。
+ * 改成多档线性插值：酸性带一点暖调、中性近无色、碱性偏冷，全程平滑。
+ *
+ * 注意颜色刻意都很淡（alpha 0.18~0.26）：真正的显色靠指示剂（indicatorColor），
+ * 这里只是"看起来是杯水"的底子，浓了会把指示剂变色盖掉。
+ */
+const PH_COLOR_STOPS = [
+  [0,  [232, 200, 188, 0.26]],
+  [4,  [228, 218, 214, 0.22]],
+  [7,  [225, 232, 238, 0.18]],
+  [10, [205, 218, 232, 0.21]],
+  [14, [190, 200, 225, 0.25]],
+];
+
 export function solutionColor(ph) {
-  if (ph < 2) return [230, 200, 190, 0.25];
-  if (ph > 12) return [190, 200, 225, 0.25];
-  return [225, 232, 238, 0.18];
+  const p = Math.max(0, Math.min(14, ph));
+  for (let i = 0; i < PH_COLOR_STOPS.length - 1; i++) {
+    const [p0, c0] = PH_COLOR_STOPS[i];
+    const [p1, c1] = PH_COLOR_STOPS[i + 1];
+    if (p <= p1) {
+      const k = p1 === p0 ? 0 : (p - p0) / (p1 - p0);
+      return [0, 1, 2, 3].map(j => {
+        const v = c0[j] + (c1[j] - c0[j]) * k;
+        return j === 3 ? +v.toFixed(4) : Math.round(v);
+      });
+    }
+  }
+  return PH_COLOR_STOPS[PH_COLOR_STOPS.length - 1][1].slice();
 }
 
 /* ============================================================
@@ -161,6 +225,7 @@ export class Beaker {
     // 液体
     const innerTop = by + bh * (1 - this.fill);
     if (this.fill > 0.001) {
+      const [rr, gg, bb, aa = 1] = this.color;
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(bx + 1.5, innerTop);
@@ -170,16 +235,41 @@ export class Beaker {
       ctx.quadraticCurveTo(bx + bw - 1.5, by + bh - 1.5, bx + bw - 1.5, by + bh - r);
       ctx.lineTo(bx + bw - 1.5, innerTop);
       ctx.closePath();
-      const [rr, gg, bb, aa] = this.color;
-      ctx.fillStyle = `rgba(${rr},${gg},${bb},${Math.min(aa, 0.95)})`;
+      // 纵向渐变：顶部略淡、底部略深
+      const liqGrad = ctx.createLinearGradient(0, innerTop, 0, by + bh);
+      liqGrad.addColorStop(0, `rgba(${rr},${gg},${bb},${Math.min(aa * 0.78, 0.95)})`);
+      liqGrad.addColorStop(1, `rgba(${rr},${gg},${bb},${Math.min(aa * 1.05, 0.95)})`);
+      ctx.fillStyle = liqGrad;
       ctx.fill();
-      // 液面高光
-      ctx.strokeStyle = 'rgba(255,255,255,0.20)';
-      ctx.lineWidth = 1.2;
+      // 弯月面：凹面朝上（两端高、中心最低，与真实读数位置一致）
+      // ⚠️ 第 8 参 counterclockwise 必须为 true，否则弧线绕上半周、方向画反
+      const mRy = Math.max(2.5, bw * 0.04);
+      const mRx = bw * 0.42;
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.ellipse(bx + bw / 2, innerTop, mRx, mRy, 0, Math.PI, 0, true);
+      ctx.stroke();
+      ctx.restore();
+      // 玻璃左壁高光（screen 合成）
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
       ctx.beginPath();
       ctx.moveTo(bx + 1.5, innerTop);
+      ctx.lineTo(bx + 1.5, by + bh - r);
+      ctx.quadraticCurveTo(bx + 1.5, by + bh - 1.5, bx + r, by + bh - 1.5);
+      ctx.lineTo(bx + bw - r, by + bh - 1.5);
+      ctx.quadraticCurveTo(bx + bw - 1.5, by + bh - 1.5, bx + bw - 1.5, by + bh - r);
       ctx.lineTo(bx + bw - 1.5, innerTop);
-      ctx.stroke();
+      ctx.closePath();
+      ctx.clip();
+      const sheenG = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+      sheenG.addColorStop(0,    'rgba(255,255,255,0)');
+      sheenG.addColorStop(0.18, 'rgba(255,255,255,0.13)');
+      sheenG.addColorStop(0.34, 'rgba(255,255,255,0.03)');
+      sheenG.addColorStop(1,    'rgba(255,255,255,0)');
+      ctx.fillStyle = sheenG;
+      ctx.fillRect(bx, by, bw, bh);
       ctx.restore();
     }
 
@@ -328,14 +418,25 @@ export class ParticleField {
     ctx.fillRect(0, 0, w, h);
 
     this._parts.forEach(p => {
+      const resolved = resolveColor(p.color);   // Canvas 不认 CSS 变量，先解析
+      const parsed   = parseColor(resolved);
+      const [dr, dg, db, da] = darkenArr(parsed, 0.35);
+      // 径向渐变：左上高光→本色→暗部，模拟球感
+      const gr = ctx.createRadialGradient(
+        p.x - p.r * 0.32, p.y - p.r * 0.32, 0,
+        p.x, p.y, p.r
+      );
+      gr.addColorStop(0,    'rgba(255,255,255,0.42)');
+      gr.addColorStop(0.38, resolved);
+      gr.addColorStop(1,    `rgba(${dr},${dg},${db},${da})`);
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = resolveColor(p.color);   // Canvas 不认 CSS 变量，先解析
-      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = gr;
+      ctx.globalAlpha = 0.92;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 0.6;
       ctx.stroke();
     });
 

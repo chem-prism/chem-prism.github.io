@@ -10,6 +10,7 @@ import { mountLab } from './lab-shell.js';
 import {
   balance, conicalFlask, burette, volumetricFlask, pipette, beaker,
   hotplate, thermometer, bubbles, CLEAR_COLOR, MOHR_CRYSTAL_COLOR,
+  drawBench,
 } from '../glassware.js';
 
 export const meta = {
@@ -85,9 +86,8 @@ function model(ops) {
 }
 
 function draw(ctx, W, H, t, i, r, ops) {
-  const B = H * 0.88, cx = W / 2;
-  ctx.strokeStyle = 'rgba(160,180,196,0.16)';
-  ctx.beginPath(); ctx.moveTo(W * 0.06, B); ctx.lineTo(W * 0.94, B); ctx.stroke();
+  const B = drawBench(ctx, W, H);   // 台面线统一在 glassware.js 的 BENCH_Y
+  const cx = W / 2;
   if (i === -1) {
     balance(ctx, { x: cx - 130, y: B - 160, w: 120, h: 160 }, { item: true, itemColor: MOHR_CRYSTAL_COLOR, reading: '0.375' });
     volumetricFlask(ctx, { x: cx + 20, y: B - 220, w: 100, h: 220 }, { liquid: CLEAR_COLOR, level: 0.42 });

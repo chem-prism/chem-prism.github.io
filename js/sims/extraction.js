@@ -11,6 +11,7 @@ import { extractOnce, extractTotal } from '../chem.js';
 import { Chart, sample } from '../chart.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
+import { glassColor } from '../glassware.js';
 export const meta = {
   id: 'extraction',
   name: '液液萃取',
@@ -97,14 +98,14 @@ export function mount(root, params = {}) {
     ctx.lineTo(fx + halfW - 7, neckY + neckH);
     ctx.lineTo(fx + halfW - 7, neckY);
     ctx.closePath();
-    ctx.strokeStyle = 'rgba(160,180,196,0.55)';
+    ctx.strokeStyle = glassColor(0.55);
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
     // 旋塞
     ctx.beginPath();
     ctx.arc(fx + halfW, neckY + neckH * 0.45, 6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(160,180,196,0.5)';
+    ctx.strokeStyle = glassColor(0.5);
     ctx.stroke();
 
     // 两相：上有机相、下水相。宽度随高度线性插值（梯形）

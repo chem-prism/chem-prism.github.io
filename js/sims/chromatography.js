@@ -16,6 +16,7 @@ import { chromMetrics, chromatogram, vanDeemter, optimumVelocity, resolutionVerd
 import { Chart, sample } from '../chart.js';
 import { resolveColor } from '../chart.js';
 import { h, panel, readouts, slider, finding } from './common.js';
+import { glassColor } from '../glassware.js';
 
 export const meta = {
   id: 'chromatography',
@@ -108,12 +109,12 @@ export function mount(root, params = {}) {
     // 柱体
     ctx.fillStyle = 'rgba(120,140,155,0.10)';
     ctx.fillRect(colX, top, colW, colH);
-    ctx.strokeStyle = 'rgba(160,180,196,0.45)';
+    ctx.strokeStyle = glassColor(0.45);
     ctx.lineWidth = 1.4;
     ctx.strokeRect(colX, top, colW, colH);
 
     // 流动相方向箭头
-    ctx.strokeStyle = 'rgba(160,180,196,0.35)';
+    ctx.strokeStyle = glassColor(0.35);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(colX + colW + 14, top + 6);
@@ -125,7 +126,7 @@ export function mount(root, params = {}) {
     ctx.lineTo(colX + colW + 18, bot - 12);
     ctx.stroke();
     ctx.font = '10px "PingFang SC", sans-serif';
-    ctx.fillStyle = 'rgba(160,180,196,0.55)';
+    ctx.fillStyle = glassColor(0.55);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('流动相', colX + colW + 22, (top + bot) / 2);
@@ -159,7 +160,7 @@ export function mount(root, params = {}) {
     band(p2, sig2, '47,179,163', '组分 2');
 
     ctx.font = '10px "PingFang SC", sans-serif';
-    ctx.fillStyle = 'rgba(160,180,196,0.45)';
+    ctx.fillStyle = glassColor(0.45);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillText('k 越大，在固定相停留越久，走得越慢', w / 2, hh - 6);

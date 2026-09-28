@@ -10,6 +10,7 @@
 
 import { h, panel, readouts, slider, finding } from './common.js';
 
+import { glassColor } from '../glassware.js';
 export const meta = {
   id: 'gravimetry',
   name: '重量分析法',
@@ -84,7 +85,7 @@ export function mount(root, params = {}) {
     const cy = hh * 0.42;
 
     // 流程线
-    ctx.strokeStyle = 'rgba(160,180,196,0.28)';
+    ctx.strokeStyle = glassColor(0.28);
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(pad, cy); ctx.lineTo(w - pad, cy);
@@ -96,15 +97,15 @@ export function mount(root, params = {}) {
       const key = i === 0 || i === 4;
       ctx.beginPath();
       ctx.arc(x, cy, key ? 11 : 7, 0, Math.PI * 2);
-      ctx.fillStyle = key ? 'rgba(47,179,163,0.9)' : 'rgba(160,180,196,0.35)';
+      ctx.fillStyle = key ? 'rgba(47,179,163,0.9)' : glassColor(0.35);
       ctx.fill();
       ctx.font = key ? '600 11px "PingFang SC", sans-serif' : '11px "PingFang SC", sans-serif';
-      ctx.fillStyle = key ? 'rgba(47,179,163,1)' : 'rgba(160,180,196,0.7)';
+      ctx.fillStyle = key ? 'rgba(47,179,163,1)' : glassColor(0.7);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(s, x, cy + 16);
       if (i < STEPS.length - 1) {
-        ctx.strokeStyle = 'rgba(160,180,196,0.3)';
+        ctx.strokeStyle = glassColor(0.3);
         ctx.beginPath();
         ctx.moveTo(x + (key ? 13 : 9), cy);
         ctx.lineTo(x + stepW - (key ? 13 : 9), cy);

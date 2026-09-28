@@ -12,6 +12,7 @@ import { mountLab } from './lab-shell.js';
 import {
   testTube, beaker, stirPlate, waterBath, thermometer, stopwatch,
   bubbles, CLEAR_COLOR,
+  drawBench,
 } from '../glassware.js';
 
 export const meta = {
@@ -80,9 +81,8 @@ function model(ops) {
 }
 
 function draw(ctx, W, H, t, i, r) {
-  const B = H * 0.88, cx = W / 2;
-  ctx.strokeStyle = 'rgba(160,180,196,0.16)';
-  ctx.beginPath(); ctx.moveTo(W * 0.06, B); ctx.lineTo(W * 0.94, B); ctx.stroke();
+  const B = drawBench(ctx, W, H);   // 台面线统一在 glassware.js 的 BENCH_Y
+  const cx = W / 2;
   if (i === -1) {
     for (let n = 0; n < 4; n++) {
       testTube(ctx, { x: cx - 150 + n * 88, y: B - 145, w: 42, h: 145 }, { liquid: CLEAR_COLOR, level: 0.45 });

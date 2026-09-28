@@ -11,6 +11,7 @@
 import { Chart, sample } from '../chart.js';
 import { h, panel, readouts, slider, finding } from './common.js';
 
+import { glassColor } from '../glassware.js';
 export const meta = {
   id: 'aas',
   name: '原子吸收',
@@ -83,7 +84,7 @@ export function mount(root, params = {}) {
     const cy = hh * 0.42;
     const label = (txt, x, y, col) => {
       ctx.font = '10px "PingFang SC", sans-serif';
-      ctx.fillStyle = col || 'rgba(160,180,196,0.6)';
+      ctx.fillStyle = col || glassColor(0.6);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(txt, x, y);
@@ -115,14 +116,14 @@ export function mount(root, params = {}) {
     ctx.save();
     ctx.translate(mx, cy);
     ctx.rotate(Math.PI / 4);
-    ctx.strokeStyle = 'rgba(160,180,196,0.6)';
+    ctx.strokeStyle = glassColor(0.6);
     ctx.lineWidth = 1.6;
     ctx.strokeRect(-11, -11, 22, 22);
     ctx.restore();
     label('单色器', mx, cy + 22);
 
     // 4 检测器
-    ctx.fillStyle = 'rgba(160,180,196,0.55)';
+    ctx.fillStyle = glassColor(0.55);
     ctx.fillRect(w - 34, cy - 10, 14, 20);
     label('检测器', w - 27, cy + 14);
 
