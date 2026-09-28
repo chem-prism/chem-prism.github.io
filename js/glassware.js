@@ -1259,6 +1259,116 @@ export function stirringRod(ctx, box, o = {}) {
   ctx.restore();
 }
 
+/**
+ * 台式 pH 计整机：机身（显示屏 + 设置/校准/读数三键）+ 立杆 + 夹持臂 + 复合电极。
+ * 电极从臂端垂下，玻璃球泡停在 bulbY 处——调用方把烧杯/缓冲瓶放在它下面，
+ * 让球泡浸入液面（课件要求「玻璃泡全部浸没」）。
+ *
+ * o = { reading:'3.35', slopePct:98.2, bulbY, note:'' }
+ * 返回 { bulb: {x, y} }，供调用方对齐液面。
+ */
+export function phMeter(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const bodyW = w * 0.52, bodyH = Math.max(56, h * 0.30);
+  const bodyX = x, bodyY = y + h - bodyH;
+
+  // 立杆与夹持臂（先画，压在机身后面）
+  const px = x + w * 0.60;
+  const ay = y + h * 0.10;
+  const ax = x + w * 0.86;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120,140,155,0.7)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(px, bodyY + bodyH * 0.35);
+  ctx.lineTo(px, ay);
+  ctx.lineTo(ax, ay);
+  ctx.stroke();
+  ctx.restore();
+
+  // 复合电极：从臂端垂下的细玻璃管，上段为参比套管，末端玻璃球泡
+  const bulbY = o.bulbY ?? y + h * 0.88;
+  const ex = ax;
+  ctx.save();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(ex, ay);
+  ctx.lineTo(ex, bulbY - 6);
+  ctx.stroke();
+  ctx.lineWidth = 4.6;
+  ctx.beginPath();
+  ctx.moveTo(ex, ay + 4);
+  ctx.lineTo(ex, ay + Math.max(10, (bulbY - ay) * 0.30));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(ex, bulbY - 4, 4.6, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(190,210,220,0.30)';
+  ctx.fill();
+  ctx.stroke();
+  // 电缆：从电极顶端弧线回到机身
+  ctx.strokeStyle = 'rgba(90,102,114,0.9)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ex, ay + 2);
+  ctx.bezierCurveTo(ex - w * 0.10, y + h * 0.02, bodyX + bodyW * 0.9, y + h * 0.06,
+    bodyX + bodyW * 0.94, bodyY + 4);
+  ctx.stroke();
+  ctx.restore();
+
+  // 机身
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(bodyX, bodyY, bodyW, bodyH, 4) : ctx.rect(bodyX, bodyY, bodyW, bodyH);
+  ctx.fillStyle = 'rgba(30,37,44,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+
+  // 显示屏：读数 + （校准时）斜率
+  const sx = bodyX + bodyW * 0.10, sy = bodyY + bodyH * 0.10;
+  const sw = bodyW * 0.80, sh = bodyH * 0.46;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(sx, sy, sw, sh, 2) : ctx.rect(sx, sy, sw, sh);
+  ctx.fillStyle = 'rgba(12,17,22,0.95)';
+  ctx.fill();
+  if (o.reading != null && o.reading !== '') {
+    ctx.font = '600 14px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = cssVar('--text', '#dde5ec');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(o.reading), sx + sw / 2, sy + sh * (o.slopePct != null ? 0.36 : 0.52));
+  }
+  if (o.slopePct != null) {
+    ctx.font = '8px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = cssVar('--w-amber', '#e8a33d');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`斜率 ${Number(o.slopePct).toFixed(1)}%`, sx + sw / 2, sy + sh * 0.78);
+  }
+
+  // 三个键：设置 / 校准 / 读数
+  const keys = ['设置', '校准', '读数'];
+  const kw = bodyW * 0.24, kh = bodyH * 0.20;
+  keys.forEach((lb, i) => {
+    const kx = bodyX + bodyW * (0.10 + 0.30 * i);
+    const ky = bodyY + bodyH * 0.66;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(kx, ky, kw, kh, 2) : ctx.rect(kx, ky, kw, kh);
+    ctx.fillStyle = 'rgba(70,80,90,0.9)';
+    ctx.fill();
+    ctx.font = '9px "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(200,212,222,0.9)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lb, kx + kw / 2, ky + kh / 2 + 0.5);
+  });
+  ctx.restore();
+
+  return { bulb: { x: ex, y: bulbY - 4 } };
+}
+
 /* ============================================================
  * 现象：气泡、晶体、热气
  * ============================================================ */

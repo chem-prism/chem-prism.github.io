@@ -77,6 +77,10 @@ const items = [
     G.conicalFlask(c, b, { liquid: [214, 220, 228, 0.30], level: 0.40 });
     G.precipitateFlocs(c, { x: b.x + b.w * 0.22, y: b.y + b.h * 0.42, w: b.w * 0.56, h: b.h * 0.52 }, 1.5, 0.8);
   }],
+  ['pH 计 整机', (c, b) => {
+    G.beaker(c, { x: b.x + 74, y: b.y + b.h - 92, w: 66, h: 92 }, { liquid: [214, 226, 238, 0.28], level: 0.52 });
+    G.phMeter(c, { x: b.x, y: b.y + 4, w: b.w, h: b.h - 8 }, { reading: '3.35', slopePct: 98.2, bulbY: b.y + b.h - 46 });
+  }],
 ];
 
 const ROWS = Math.ceil(items.length / COLS);

@@ -1391,3 +1391,116 @@ export const METAL_INDICATORS = [
     note: 'pH>13.5 时指示剂自身呈酒红色、与 CaIn 同色，终点突变消失（实验 06 思考题 4 的口径）。',
   },
 ];
+
+/* ============================================================
+ * 课程实验：pH 法测定 HAc 的电离常数和电离度（实验 07）
+ *
+ * 数据来源 —— 本课程课件（关键页已渲染原页核对）：
+ *   · 邻苯二甲酸氢钾 M = 204.22（P224；与 NaOH 1:1），标定剂
+ *   · P29 示例表（原页）：c = 0.0102/0.02043/0.05110/0.1022、
+ *     pH = 3.35/3.21/3.02/2.86；用它反算 Ka = 2.0/1.9/1.8/1.9×10⁻⁵，与该表自洽
+ *   · P35「示例」表不自洽（Ka 列误印 ×10⁻⁴、第 3/4 行 [H⁺] 指数印错）——不采用；
+ *     理论序列按 Ka = 1.78×10⁻⁵ 精确式反算为 3.38/3.23/3.02/2.87
+ *   · 有效数字（报告要求）：NaOH 浓度 4 位；pH 两位（首数是幂次）；
+ *     Ka、α 两位；相对偏差带正负、位数随差值
+ *   · Q 检验 n=3 临界值 0.94（报告要求 (5)，与 chem.js 上方 Q_TABLE 一致）
+ *   · E = K − 0.0591·pH（P17，25 ℃）
+ *
+ * 本节全部是纯计量式；pH 计的读数偏差（斜率、未校准、测量顺序、电极护理、
+ * 实测偏差向量）是教学标定模型，不在这里——见 sims/ph-acetic.js 的 model()。
+ * ============================================================ */
+
+/** 邻苯二甲酸氢钾 M / g·mol⁻¹（课件 P224 与报告要求原值） */
+export const M_KHP = 204.22;
+
+/** 教材 20 ℃ 醋酸电离常数——报告要求 (8) 给区间 1.75~1.8×10⁻⁵，取中值作比较基准 */
+export const KA_HAc = 1.78e-5;
+
+/** NaOH 标定（邻苯二甲酸氢钾，1:1）：c_i = (m/204.22) ÷ (V_i/1000) */
+export function naohStandardization({ mKHP = 0.5205, volumes = [24.90, 24.91, 24.93] } = {}) {
+  const n = mKHP / M_KHP;
+  const c = volumes.map(v => n / (v / 1000));
+  const stats = relativeMeanDeviation(c);
+  const vStats = relativeMeanDeviation(volumes);
+  return {
+    n, c, volumes,
+    cMean: stats.average,
+    reportedC: Number(stats.average.toFixed(4)),
+    deviationsPct: stats.deviationsPct,
+    meanDeviationPct: stats.meanDeviationPct,
+    range: vStats.range,
+    relativeRangePct: vStats.relativeRangePct,
+    q: qTest(c),
+  };
+}
+
+/** HAc 总浓度（NaOH 滴定，1:1）：c_i = c(NaOH)·V_i / V(HAc)；课件判据：三份极差 < 0.04 mL */
+export function hacTotalConcentration({ cNaOH, volumes = [24.97, 24.98, 24.99], vHAc = 25.00 } = {}) {
+  const c = volumes.map(v => cNaOH * v / vHAc);
+  const stats = relativeMeanDeviation(c);
+  const vStats = relativeMeanDeviation(volumes);
+  return {
+    c, volumes,
+    cMean: stats.average,
+    reportedC: Number(stats.average.toFixed(4)),
+    deviationsPct: stats.deviationsPct,
+    meanDeviationPct: stats.meanDeviationPct,
+    range: vStats.range,
+    repeatOk: vStats.range <= 0.04,
+  };
+}
+
+/**
+ * 一元弱酸的精确电离平衡（忽略水的电离——c ≥ 0.01 mol/L 时成立）：
+ *   h = (−Ka + √(Ka² + 4Ka·c)) / 2；α = h/c
+ */
+export function weakAcidEquilibrium({ c, ka = KA_HAc }) {
+  const h = (-ka + Math.sqrt(ka * ka + 4 * ka * c)) / 2;
+  return { h, ph: -Math.log10(h), alpha: h / c };
+}
+
+/**
+ * 由实测 pH 反算 Ka（课件公式）：[H⁺] = 10^(−pH)；Ka = [H⁺]²/(c − [H⁺])；α = [H⁺]/c。
+ * approx=true 时用忽略电离消耗的近似式 Ka = h²/c——最稀的样品上偏低最多
+ * （0.01 mol/L 处约低 4.4%），sim 里作为可选口径展示这个差别。
+ */
+export function kaFromPH({ c, ph, approx = false }) {
+  const h = Math.pow(10, -ph);
+  const ka = approx ? h * h / c : h * h / (c - h);
+  return { h, ka, alpha: h / c };
+}
+
+/** 稀释系列浓度：c_k = c0·V_k/V(容量瓶)；默认 5.00/10.00/25.00 mL 稀释至 50 mL，加原液共 4 份 */
+export function dilutionSeries({ c0, aliquots = [5.00, 10.00, 25.00], vFlask = 50.00 }) {
+  return [...aliquots.map(v => c0 * v / vFlask), c0];
+}
+
+/**
+ * pH 计读数（教学标定模型）。
+ * 物理依据：E = K − S·pH（P17）。两点校准把低缓冲点（pH 4.00）钉在直线上，
+ * 电极实际斜率 S = slopePct·S₀ 时，读数 ≈ 4.00 + (S/S₀)·(pH − 4.00)——
+ * 偏离在测量点离锚点越远时越大（本实验样品在 pH 2.9~3.4，锚点下方 0.6~1.1 个单位）。
+ * 未校准（K 未定）用一个方向性偏移 +0.20 表示（⚠️ 教学标定，非实测）。
+ */
+export function phMeterReading({ phTrue, slopePct = 100, calibrated = true, anchorPH = 4.00 }) {
+  if (!calibrated) return { read: phTrue + 0.20, err: 0.20 };
+  const k = Math.max(0.5, Math.min(1.5, slopePct / 100));
+  const read = anchorPH + k * (phTrue - anchorPH);
+  return { read, err: read - phTrue };
+}
+
+/**
+ * 顶层组装：由 c(HAc) 与四个实测 pH 生成逐份 c / pH / [H⁺] / Ka / α，
+ * 并给出 Ka 均值、与教材值（1.78×10⁻⁵）的相对误差。
+ * phMeasured 传**记录到 0.01 的 pH**（课件就是从记录值算的）。
+ */
+export function hacReport({ cHAc, phMeasured, approx = false }) {
+  const cs = dilutionSeries({ c0: cHAc });
+  const rows = cs.map((c, k) => {
+    const theory = weakAcidEquilibrium({ c });
+    const m = kaFromPH({ c, ph: phMeasured[k], approx });
+    return { c, ph: phMeasured[k], phTheory: theory.ph, h: m.h, ka: m.ka, alpha: m.alpha };
+  });
+  const kaMean = rows.reduce((a, r) => a + r.ka, 0) / rows.length;
+  return { rows, kaMean, kaRef: KA_HAc, relErrPct: (kaMean - KA_HAc) / KA_HAc * 100 };
+}

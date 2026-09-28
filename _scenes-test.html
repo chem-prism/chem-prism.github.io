@@ -58,6 +58,12 @@ const SCENES = {
             '计算 c(EDTA) 与两硬度','差减求镁硬度并换算 MgO','结果评价与分级'],
     count: 10,
   },
+  'ph-acetic': {
+    title: '实验 07 · pH 法测 HAc 电离常数',
+    names: ['配制 NaOH 溶液','称取并溶解基准物','标定滴定','移取 HAc 试样','滴定 HAc 总浓度',
+            '稀释系列','两点校准 pH 计','由稀到浓测 pH','计算 Ka 与 α','与教材值比较并讨论'],
+    count: 10,
+  },
 };
 const scene = SCENES[SIM] || SCENES['mohr-salt'];
 document.title = `${scene.title} · 场景构图自检`;
