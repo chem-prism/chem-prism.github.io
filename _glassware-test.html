@@ -81,6 +81,16 @@ const items = [
     G.beaker(c, { x: b.x + 74, y: b.y + b.h - 92, w: 66, h: 92 }, { liquid: [214, 226, 238, 0.28], level: 0.52 });
     G.phMeter(c, { x: b.x, y: b.y + 4, w: b.w, h: b.h - 8 }, { reading: '3.35', slopePct: 98.2, bulbY: b.y + b.h - 46 });
   }],
+  ['分光光度计 整机', (c, b) => G.spectrophotometer(c,
+    { x: b.x, y: b.y + b.h * 0.24, w: b.w, h: b.h * 0.72 },
+    { wavelength: 480, reading: '0.430', cell: [214, 78, 92, 0.7] })],
+  ['比色皿 ×4（配对）', (c, b) => {
+    const y0 = b.y + b.h * 0.42;
+    for (let i = 0; i < 4; i++) {
+      G.cuvette(c, { x: b.x + 8 + i * 28, y: y0, w: 18, h: 62 },
+        { liquid: i === 0 ? [225, 232, 238, 0.2] : [214, 78, 92, 0.55] });
+    }
+  }],
 ];
 
 const ROWS = Math.ceil(items.length / COLS);

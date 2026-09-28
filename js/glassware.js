@@ -1369,6 +1369,166 @@ export function phMeter(ctx, box, o = {}) {
   return { bulb: { x: ex, y: bulbY - 4 } };
 }
 
+/**
+ * 1 cm 比色皿（小尺寸图示）。四面透光，两侧毛面以磨砂色区分；
+ * 盛液 2/3（课件要求）；正面近口处一个小 V 标记——配对时要求
+ * 「带 V 的面始终朝同一方向」，这样每次光路经过的两面不变。
+ * o = { liquid: [r,g,b,a], level = 0.66 }
+ */
+export function cuvette(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = Math.min(3, w * 0.18);
+  const path = c => {
+    c.moveTo(x, y + 5);
+    c.lineTo(x, y + h - r);
+    c.quadraticCurveTo(x, y + h, x + r, y + h);
+    c.lineTo(x + w - r, y + h);
+    c.quadraticCurveTo(x + w, y + h, x + w, y + h - r);
+    c.lineTo(x + w, y + 5);
+  };
+  const level = Math.min(1, Math.max(0, o.level ?? 0.66)) * 0.9;
+  vessel(ctx, path, { x, y, w, h }, { liquid: o.liquid, level, highlight: false });
+  // 两次毛面（左右两侧的窄磨砂条）
+  ctx.save();
+  ctx.fillStyle = 'rgba(200,210,220,0.16)';
+  ctx.fillRect(x, y + 5, Math.max(2, w * 0.14), h - 5);
+  ctx.fillRect(x + w - Math.max(2, w * 0.14), y + 5, Math.max(2, w * 0.14), h - 5);
+  // 口沿
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x - 1, y + 5);
+  ctx.lineTo(x + w + 1, y + 5);
+  ctx.stroke();
+  // V 标记
+  if (w >= 14) {
+    ctx.font = `${Math.max(7, Math.round(w * 0.28))}px ui-monospace, Menlo, monospace`;
+    ctx.fillStyle = 'rgba(190,205,218,0.8)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('v', x + w * 0.52, y + 0.5);
+  }
+  ctx.restore();
+}
+
+/**
+ * 分光光度计整机（美谱达 V-1100D 简化形）。
+ * 课件 P14 的五个部件对应到画面：光源（左端暖色指示灯）、
+ * 单色器（机身头部转盘 = 波长旋钮）、吸收池（试样室里的比色皿）、
+ * 检测器（屏上读数）、显示器（绿色 LCD）。
+ * P35 面板上的操作件也照画：波长旋钮、MODE 键、∨ 调零、∧ 参比 100%T、
+ * 以及切换「参比/样品」的拉杆。
+ *
+ * o = { wavelength: 480, reading: '0.430', mode: 'A', cell: [r,g,b,a], lidOpen: false }
+ * 返回 { cell: {x, y, w, h} }（比色皿位置，供调用方标注）。
+ */
+export function spectrophotometer(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const bodyH = Math.max(74, h * 0.60);
+  const bodyY = y + h - bodyH;
+
+  ctx.save();
+  // 机身
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, bodyY, w, bodyH, 4) : ctx.rect(x, bodyY, w, bodyH);
+  ctx.fillStyle = 'rgba(30,37,44,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+
+  // 单色器舱盖（机身上沿的窄条）
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + 3, bodyY + 3, w - 6, bodyH * 0.16, 2)
+    : ctx.rect(x + 3, bodyY + 3, w - 6, bodyH * 0.16);
+  ctx.fillStyle = 'rgba(44,54,64,0.95)';
+  ctx.fill();
+
+  // 光源指示灯（左端，暖色）
+  ctx.beginPath();
+  ctx.arc(x + w * 0.035, bodyY + bodyH * 0.11, Math.max(2.6, w * 0.018), 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(232,163,61,0.85)';
+  ctx.fill();
+
+  // 试样室（左下的内凹舱）：比色皿立在舱内
+  const compW = w * 0.34, compX = x + w * 0.06;
+  const compY = bodyY + bodyH * 0.28, compH = bodyH * 0.58;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(compX, compY, compW, compH, 2) : ctx.rect(compX, compY, compW, compH);
+  ctx.fillStyle = 'rgba(16,21,27,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.soft;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  const cellBox = {
+    x: compX + compW * 0.34, y: compY + compH * 0.16,
+    w: compW * 0.32, h: compH * 0.78,
+  };
+  cuvette(ctx, cellBox, { liquid: o.cell || [225, 232, 238, 0.25] });
+
+  // 参比/样品拉杆（试样室上沿的小柄）
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(compX + compW * 0.78, compY - 5, compW * 0.18, 5, 2)
+    : ctx.rect(compX + compW * 0.78, compY - 5, compW * 0.18, 5);
+  ctx.fillStyle = 'rgba(90,104,118,0.9)';
+  ctx.fill();
+
+  // 绿色 LCD：波长 + 读数
+  const lcdX = x + w * 0.46, lcdY = bodyY + bodyH * 0.26;
+  const lcdW = w * 0.48, lcdH = bodyH * 0.42;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(lcdX, lcdY, lcdW, lcdH, 2) : ctx.rect(lcdX, lcdY, lcdW, lcdH);
+  ctx.fillStyle = 'rgba(8,26,16,0.95)';
+  ctx.fill();
+  ctx.font = '8px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(63,220,127,0.85)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`波长 ${Number(o.wavelength ?? 480).toFixed(1)} nm`, lcdX + 5, lcdY + 4);
+  if (o.reading != null && o.reading !== '') {
+    ctx.font = '600 15px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = '#3fdc7f';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(o.reading), lcdX + lcdW * 0.55, lcdY + lcdH * 0.66);
+    ctx.font = '9px ui-monospace, Menlo, monospace';
+    ctx.fillText(o.mode || 'A', lcdX + lcdW * 0.90, lcdY + lcdH * 0.66);
+  }
+
+  // 波长旋钮 + 三键（机身右下）
+  const ky = bodyY + bodyH * 0.80;
+  const kx = x + w * 0.50;
+  ctx.beginPath();
+  ctx.arc(kx, ky + bodyH * 0.06, Math.max(7, w * 0.045), 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(70,80,90,0.9)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.soft;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(200,212,222,0.7)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(kx, ky + bodyH * 0.06);
+  ctx.lineTo(kx + Math.max(4, w * 0.028), ky + bodyH * 0.06 - Math.max(3, w * 0.02));
+  ctx.stroke();
+  const keys = ['MODE', '∨', '∧'];
+  const kw = w * 0.10, kh = bodyH * 0.16;
+  keys.forEach((lb, i) => {
+    const bx = x + w * (0.62 + 0.13 * i);
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx, ky, kw, kh, 2) : ctx.rect(bx, ky, kw, kh);
+    ctx.fillStyle = 'rgba(70,80,90,0.9)';
+    ctx.fill();
+    ctx.font = '7px "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(200,212,222,0.9)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lb, bx + kw / 2, ky + kh / 2 + 0.5);
+  });
+  ctx.restore();
+
+  return { cell: cellBox };
+}
+
 /* ============================================================
  * 现象：气泡、晶体、热气
  * ============================================================ */

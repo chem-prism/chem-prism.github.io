@@ -34,6 +34,7 @@ import * as fe2Assay from './sims/fe2-assay.js';
 import * as titrationPractice from './sims/titration-practice.js';
 import * as waterHardness from './sims/water-hardness.js';
 import * as phAcetic from './sims/ph-acetic.js';
+import * as fe3Spec from './sims/fe3-spec.js';
 
 // 顺序 = 左栏显示顺序，按分析化学的知识脉络编排：
 //   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理 → 课程实验
@@ -43,7 +44,7 @@ const SIMS = [
   potentiometry, spectrophotometry, ir, aas, ms,
   chromatography, extraction, gravimetry, molecule3d,
   qcchart, precision, propagation, mohrSalt,
-  magnesiumMolar, kinetics, fe2Assay, titrationPractice, waterHardness, phAcetic,
+  magnesiumMolar, kinetics, fe2Assay, titrationPractice, waterHardness, phAcetic, fe3Spec,
 ];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
 

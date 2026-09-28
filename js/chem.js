@@ -1504,3 +1504,94 @@ export function hacReport({ cHAc, phMeasured, approx = false }) {
   const kaMean = rows.reduce((a, r) => a + r.ka, 0) / rows.length;
   return { rows, kaMean, kaRef: KA_HAc, relErrPct: (kaMean - KA_HAc) / KA_HAc * 100 };
 }
+
+/* ============================================================
+ * 课程实验：硫酸亚铁铵中 Fe³⁺ 含量的测定（分光光度法，实验 09）
+ *
+ * 数据来源 —— 本课程课件（P33 原始数据记录表原页核对）：
+ *   · 铁标准溶液：100.0 µg/mL 原液，移 20.00 mL + 8 mL 1 mol/L H₂SO₄
+ *     → 100 mL 容量瓶 = 20.00 µg/mL
+ *   · 标准系列：6 只 50 mL 容量瓶，20.00 µg/mL 液 0.00/2.00/4.00/6.00/8.00/10.00 mL，
+ *     各 +5.00 mL 1:4 H₂SO₄ + 5.00 mL 20% KSCN，去离子水定容
+ *   · 试样：0.3~0.4 g 硫酸亚铁铵溶于 15 mL 不含 O₂ 的水 → 50 mL 容量瓶同法显色
+ *   · 比色皿：1 cm，盛 2/3，配对差值、V 标记面朝同一方向（课件 P33/P30 页）
+ *   · λmax 示意 480 nm（溶液吸收绿光、呈其补色红）；显色避光静置 10 min
+ *   · 酸度：HSCN pKa=0.85；Fe(OH)₃ Ksp = 3.5×10⁻³⁸。课件按 [Fe³⁺]=0.001 mol/L
+ *     推得 pH<3.85——按 Ksp 反算对不上（应为 2.5），本模拟器统一按
+ *     pH = 14 + ⅓·lg(Ksp/[Fe³⁺]) 参数化并注明该差异。
+ *   · ε = 1.0×10⁴ L·mol⁻¹·cm⁻¹ 是**教学设定值**：课件只留空白记录表、没有范例数字；
+ *     它使六份标准溶液的 A 落在 0~0.72（硫氰酸铁配合物的量级），
+ *     思考题 4「求摩尔吸光系数」的答案就是它（ε = 斜率 ÷ 每 µg/mL 的摩尔浓度）。
+ *
+ * 本节全是纯计量式；显色、仪器操作等偏差在 sims/fe3-spec.js 的 model() 中。
+ * ============================================================ */
+
+/** 实验 09 的固定参数（教学设定值见上方说明） */
+export const FE_SPEC = {
+  eps: 1.0e4, b: 1.0,          // 摩尔吸光系数与光程（1 cm）
+  cStd: 20.00, vFlask: 50.00,  // 实验用铁标液 µg/mL、显色容量瓶 mL
+  peak: 480, width: 55,        // λmax 与教学标定谱形宽度 nm
+};
+
+/** 100.0 µg/mL 铁标液 20.00 mL → 100 mL 的稀释 */
+export function fe3StockDilution({ cStock = 100.0, v = 20.00, vFlask = 100.0 } = {}) {
+  return { c: cStock * v / vFlask, factor: vFlask / v };
+}
+
+/** 标准系列：各取 v mL 的 20.00 µg/mL 液 → 50 mL；ug = 该份含铁量（µg） */
+export function fe3StandardSeries({ aliquots = [0, 2, 4, 6, 8, 10], cStd = FE_SPEC.cStd, vFlask = FE_SPEC.vFlask } = {}) {
+  return aliquots.map(v => ({ v, ug: v * cStd, ugPerMl: v * cStd / vFlask }));
+}
+
+/** µg/mL → mol/L（Fe 用上方 AR.Fe = 55.845） */
+export const fe3Molarity = ugPerMl => ugPerMl / 1000 / AR.Fe;
+
+/**
+ * 教学标定谱形：A(λ) = aMax·exp(−((λ−480)/55)²)。
+ * 峰位 480 nm 取课件示意值（溶液吸收绿色光、呈红色的补色关系）；
+ * 形状是教学标定（真实硫氰酸铁吸收带更宽、略有不对称），只保证单调性与半宽合理。
+ */
+export function fe3Spectrum({ lambda, aMax, peak = FE_SPEC.peak, width = FE_SPEC.width }) {
+  return aMax * Math.exp(-Math.pow((lambda - peak) / width, 2));
+}
+
+/** Fe(OH)₃ 开始沉淀的临界 pH：pH = 14 + ⅓·lg(Ksp/[Fe³⁺])（课件原文写 3.85，见上方说明） */
+export function fe3MinPH({ cFe = 2.3e-5, ksp = 3.5e-38 } = {}) {
+  return 14 + Math.log10(ksp / cFe) / 3;
+}
+
+/** 最小二乘直线拟合 y = slope·x + intercept（标准曲线、ε 计算共用） */
+export function linearFit({ xs, ys }) {
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let k = 0; k < n; k++) {
+    sxy += (xs[k] - mx) * (ys[k] - my);
+    sxx += (xs[k] - mx) ** 2;
+    syy += (ys[k] - my) ** 2;
+  }
+  const slope = sxy / sxx;
+  const intercept = my - slope * mx;
+  return { slope, intercept, r2: syy === 0 ? 1 : (sxy * sxy) / (sxx * syy) };
+}
+
+/** 由标准曲线反算试样含量：ug 为该份（50 mL）中的 Fe³⁺ 微克数，w 为质量百分数 % */
+export function fe3ContentFromCurve({ aSample, slope, intercept = 0, mSample, vFlask = FE_SPEC.vFlask }) {
+  const ug = (aSample - intercept) / slope;
+  const mgPerG = ug / 1000 / mSample;
+  return { ug, mgPerG, w: mgPerG / 10 };
+}
+
+/**
+ * 摩尔吸光系数（思考题 4）。
+ * 注意曲线横轴的两种口径，别把因子混掉：
+ *   slopePerUg  —— 横轴为「每份含铁量 µg」（课件记录表的写法）：ε = slope×vFlask ÷ 每 µg/mL 的摩尔浓度 ÷ b
+ *   slopePerUgMl—— 横轴为「µg/mL」：ε = slope ÷ 每 µg/mL 的摩尔浓度 ÷ b
+ * 本实验的标准曲线按课件记录表以「含铁量 µg」为横轴，故默认走第一种。
+ */
+export function molarAbsorptivity({ slopePerUg, slopePerUgMl = null, vFlask = FE_SPEC.vFlask, b = 1 }) {
+  // 1 µg/mL = vFlask µg/份，所以「每 µg」斜率 ×vFlask 才是「每 µg/mL」斜率
+  const perMl = slopePerUgMl != null ? slopePerUgMl : slopePerUg * vFlask;
+  return perMl / fe3Molarity(1) / b;
+}

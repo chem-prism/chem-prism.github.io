@@ -16,7 +16,10 @@ const _colorCache = new Map();
 function resolveColor(c) {
   if (typeof c !== 'string') return c;
   if (_colorCache.has(c)) return _colorCache.get(c);
-  const m = c.match(/^var\(\s*(--[\w-]+)\s*\)$/);
+  // 两种写法都收：'var(--w-red)' 与裸名 '--w-red'。
+  // 裸名此前是非法值、会被静默忽略（沿用上一笔颜色）——接受它不可能破坏既有调用，
+  // 却能防住「传了裸名、颜色悄悄不生效」这类排查成本很高的坑。
+  const m = c.match(/^var\(\s*(--[\w-]+)\s*\)$/) || c.match(/^(--[\w-]+)$/);
   if (!m) { _colorCache.set(c, c); return c; }
   const v = getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim();
   const out = v || '#7d8d99';
@@ -69,8 +72,12 @@ export class Chart {
     canvas.addEventListener('touchmove', e => {
       if (e.touches[0]) this._onMove(e.touches[0]);
     }, { passive: true });
-    window.addEventListener('resize', () => this.draw());
+    this._onResize = () => this.draw();
+    window.addEventListener('resize', this._onResize);
   }
+
+  /** 释放 window resize 监听（canvas 自身的监听随 DOM 一起回收） */
+  destroy() { window.removeEventListener('resize', this._onResize); }
 
   setSeries(series) { this.series = series; return this; }
   setBands(bands) { this.bands = bands; return this; }
@@ -254,7 +261,20 @@ export class Chart {
     ctx.rect(p.x, p.y, p.w, p.h);
     ctx.clip();
     this.series.forEach(s => {
-      if (!s.points || s.points.length < 2) return;
+      if (!s.points || s.points.length < 2) {
+        // 单点系列：不画线，只画数据点（标准曲线上标注「试样」那一点）
+        if (s.dots && s.points && s.points.length === 1) {
+          const pt = s.points[0];
+          ctx.beginPath();
+          ctx.arc(this._px(pt.x), this._py(pt.y), s.dotR || 3.4, 0, Math.PI * 2);
+          ctx.fillStyle = resolveColor(s.dotColor || s.color);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(10,14,18,0.8)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        return;
+      }
 
       // 棒图（质谱等）：每个点从基线画一根竖棒
       if (s.bars) {
