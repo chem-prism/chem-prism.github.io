@@ -1595,3 +1595,71 @@ export function molarAbsorptivity({ slopePerUg, slopePerUgMl = null, vFlask = FE
   const perMl = slopePerUgMl != null ? slopePerUgMl : slopePerUg * vFlask;
   return perMl / fe3Molarity(1) / b;
 }
+
+/* ============================================================
+ * 课程实验：光敏剂与蓝晒古法印相（实验 08）
+ *
+ * 数据来源 —— 本课程课件：
+ *   · 合成：5.0 g Fe(NH₄)₂(SO₄)₂·6H₂O → 三草酸合铁(Ⅲ)酸钾 K₃[Fe(C₂O₄)₃]·3H₂O；
+ *     四步反应式见课件；产率 m理论 = 5.0×491/392 = 6.3 g（1:1 计量，莫尔盐 392.14、
+ *     产物 491.25——课件按 392/491 计，结果同为 6.3）
+ *   · 蓝晒：光敏剂 K₃[Fe(C₂O₄)₃] 溶液 6 mL + 0.5 M K₃[Fe(CN)₆] 2 mL；
+ *     曝光：阳光约 30 min ≈ 紫外灯 30~45 s（课件原文的换算关系）
+ *   · 光解：2[Fe(C₂O₄)₃]³⁻ --hv--> 2Fe²⁺ + 2CO₂↑ + 5C₂O₄²⁻
+ *   · 显色：3Fe²⁺ + 2[Fe(CN)₆]³⁻ = Feᴵᴵ₃[Feᴵᴵᴵ(CN)₆]₂↓（滕氏蓝，不稳定）
+ *     → 电子转移得 KFeᴵᴵᴵ[Feᴵᴵ(CN)₆]（普鲁士蓝）；
+ *     中间态 K₂Feᴵᴵ[Feᴵᴵ(CN)₆]（普鲁士白）——水洗后由 O₂/H₂O₂ 氧化成蓝
+ *   · 课件不自洽处：H₂O₂/草酸浓度，正文步骤写 3% / 1:1，原理页与注意事项写 1%——
+ *     本模拟器按正文步骤取 3% / 1:1，并在 modelNote 注明。
+ *
+ * 光解分数与普鲁士蓝色深是**教学标定模型**（课件无实测数字），
+ * 只保证方向与量级：欠曝花纹淡、过曝背景深、40 s 紫外≈接近完全。
+ * ============================================================ */
+
+/** 产物 K₃[Fe(C₂O₄)₃]·3H₂O 的摩尔质量（课件按 491 计） */
+export const M_FERRIC_OXALATE = 491.25;
+
+/** 蓝晒的固定参数 */
+export const CYANO = {
+  uvDoseRef: 12,        // 光解标定：f = 1 − exp(−dose/12)
+  sunToUv: 1.5,         // 阳光 1 min ≈ 1.5 个「紫外灯秒」（课件 30 min ≈ 30~45 s）
+  aVol: 6, bVol: 2,     // 感光剂配比：光敏剂 6 mL + 铁氰化钾 2 mL
+};
+
+/** 产率（1 mol 莫尔盐 → 1 mol 产物）：m理论 = mMohr/392.14×491.25 */
+export function cyanotypeYield({ mMohr = 5.0 } = {}) {
+  const n = mMohr / M_MOHR;
+  const mTheory = n * M_FERRIC_OXALATE;
+  return { n, mTheory };
+}
+
+/**
+ * 光解分数（教学标定模型）：
+ *   dose = 紫外灯秒数；阳光按 1 min ≈ 1.5 UV-s 折算（课件换算）
+ *   f = 1 − exp(−dose/12)  —— 30~45 s 紫外对应 0.92~0.98（接近完全），
+ *   10 s 只有 0.57（明显欠曝）。⚠️ 系数是标定的，不是实测光化学量子产率。
+ */
+export function photolysisFraction({ source = 'uv', uvSeconds = 40, sunMinutes = 30 } = {}) {
+  const dose = source === 'uv' ? uvSeconds : sunMinutes * CYANO.sunToUv;
+  return { dose, f: 1 - Math.exp(-dose / CYANO.uvDoseRef) };
+}
+
+/**
+ * 普鲁士蓝的颜色（三通道吸收，镜像 thiocyanateColor 的写法）：
+ *   c_i = 255 × 10^(−D·k_i)，k = [1.6, 1.15, 0.55]（吸黄光/红光强、蓝光弱）
+ * D=1 时 ≈ (7, 20, 75) 深藏青，D≈0.5 中蓝、D≈0.2 淡蓝。
+ * ⚠️ 系数是视觉标定（对齐课件里 2022 级作品的克莱因蓝观感），不是光谱数据。
+ */
+export function prussianBlueColor(density) {
+  const D = Math.max(0, Math.min(1.15, density));
+  const k = [1.6, 1.15, 0.55];
+  return [
+    Math.round(255 * Math.pow(10, -D * k[0])),
+    Math.round(255 * Math.pow(10, -D * k[1])),
+    Math.round(255 * Math.pow(10, -D * k[2])),
+    1,
+  ];
+}
+
+/** 普鲁士白 K₂Feᴵᴵ[Feᴵᴵ(CN)₆]——刚显影、还没被氧化的近白色 */
+export const PRUSSIAN_WHITE = [233, 238, 238];

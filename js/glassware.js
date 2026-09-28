@@ -16,6 +16,7 @@
  */
 
 import { fit } from './views.js';
+import { prussianBlueColor, PRUSSIAN_WHITE } from './chem.js';
 
 /* ============================================================
  * 基础
@@ -1527,6 +1528,238 @@ export function spectrophotometer(ctx, box, o = {}) {
   ctx.restore();
 
   return { cell: cellBox };
+}
+
+/* ---------- 蓝晒（实验 08）：印相卡、曝光箱、显影盘 ---------- */
+
+/** 叶脉剪纸剪影（蓝晒的「素材」）——确定性路径，供印相卡反复使用 */
+function leafSilhouette(ctx, box, color) {
+  const { x, y, w, h } = box;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  // 主茎：从左下到右上
+  ctx.lineWidth = Math.max(1.4, w * 0.022);
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.12, y + h * 0.88);
+  ctx.quadraticCurveTo(x + w * 0.45, y + h * 0.55, x + w * 0.86, y + h * 0.14);
+  ctx.stroke();
+  // 六对侧叶：沿主茎参数取点，小叶椭圆与茎约 50°
+  for (let k = 0; k < 6; k++) {
+    const t0 = 0.12 + k * 0.145;
+    const sx = x + w * (0.12 + 0.74 * t0);
+    const sy = y + h * (0.88 - 0.74 * t0 + 0.12 * t0 * t0);
+    const rl = (0.16 - k * 0.018);
+    for (const sgn of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, w * (0.11 - k * 0.012), h * rl * 0.5, sgn * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+const PAPER_WHITE = [242, 245, 246, 1];
+
+/**
+ * 蓝晒印相卡。
+ * o = {
+ *   state: 'exposed'（曝光后未洗：底色黄绿、被叶子挡住的地方反而是普鲁士白）
+ *        | 'washed'（水洗后：底色已白，靠 oxidized 从普鲁士白渐渐变蓝）
+ *   density: 0..1   曝光足量度（背景最终蓝的深浅）
+ *   oxidized: 0..1  空气中的氧把普鲁士白氧化成普鲁士蓝的进度
+ *   mottle: 0..1    流水显影的洇痕（高亮区被冲出的花白）
+ *   blur: 0..1      未干就曝光：花纹边缘发糊
+ *   sheen: true     带水光（显影盘中）
+ * }
+ */
+export function cyanotypePrint(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = Math.min(3, w * 0.05);
+  const state = o.state || 'washed';
+  const density = Math.max(0, Math.min(1, o.density ?? 0.96));
+  const oxidized = Math.max(0, Math.min(1, o.oxidized ?? 1));
+  // 纸
+  // 曝光态的光化学方向别画反：**受光的是背景**——光敏剂分解、黄绿褪去，
+  // 变成近白的普鲁士白；被叶子挡住的地方「什么都没发生」，保持黄绿色。
+  const EXPOSED_GREEN = [204, 214, 138, 1];                  // 感光剂的黄绿
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h);
+  const field = state === 'exposed'
+    ? mix(EXPOSED_GREEN, [PRUSSIAN_WHITE[0], PRUSSIAN_WHITE[1], PRUSSIAN_WHITE[2], 1], density)
+    : mix(PAPER_WHITE, prussianBlueColor(density), oxidized);
+  ctx.fillStyle = `rgb(${field[0]},${field[1]},${field[2]})`;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120,132,142,0.55)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.clip();
+  // 花纹（叶子剪影）：曝光态还留着未反应的黄绿，水洗后是纸白
+  const silColor = state === 'exposed'
+    ? `rgb(${EXPOSED_GREEN[0]},${EXPOSED_GREEN[1]},${EXPOSED_GREEN[2]})`
+    : 'rgb(242,245,246)';
+  const blur = Math.max(0, Math.min(1, o.blur || 0));
+  if (blur > 0.02) {
+    for (const off of [-4, -2, 0, 2, 4]) {
+      ctx.globalAlpha = 0.42;
+      leafSilhouette(ctx, { x: x + blur * off, y: y + blur * off * 0.5, w, h }, silColor);
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    leafSilhouette(ctx, { x, y, w, h }, silColor);
+  }
+  // 流水显影的洇痕：几条水平冲出条带
+  const mottle = Math.max(0, Math.min(1, o.mottle || 0));
+  if (mottle > 0.02) {
+    ctx.fillStyle = `rgba(255,255,255,${0.30 * mottle})`;
+    for (let k = 0; k < 4; k++) {
+      const yy = y + h * (0.16 + 0.21 * k);
+      ctx.fillRect(x, yy, w, h * 0.05 * (0.7 + 0.3 * ((k * 0.7548776662) % 1)));
+    }
+  }
+  // 带水的反光
+  if (o.sheen) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    for (let k = 0; k < 3; k++) {
+      const yy = y + h * (0.30 + 0.22 * k);
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.10, yy);
+      ctx.lineTo(x + w * 0.90, yy);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/**
+ * 紫外曝光箱：顶部灯罩（两支紫外灯管 + 计时小屏）+ 光锥 + 底部夹好的
+ * 「亚克力板三明治」（下板、印相卡、素材、上板、四角夹子）。
+ * o = { on: true, seconds: 40, print: <cyanotypePrint 的 o> }
+ */
+export function uvExposureBox(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const lampH = h * 0.20;
+  const trayY = y + h * 0.52;
+  const trayH = h * 0.44;
+
+  ctx.save();
+  // 灯罩
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + w * 0.06, y, w * 0.88, lampH, 4) : ctx.rect(x + w * 0.06, y, w * 0.88, lampH);
+  ctx.fillStyle = 'rgba(30,37,44,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  // 两支紫外灯管
+  if (o.on !== false) {
+    for (let k = 0; k < 2; k++) {
+      const ty = y + lampH * (0.34 + 0.34 * k);
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(x + w * 0.12, ty, w * 0.52, Math.max(2.4, lampH * 0.12), 1.5)
+        : ctx.rect(x + w * 0.12, ty, w * 0.52, Math.max(2.4, lampH * 0.12));
+      ctx.fillStyle = 'rgba(168,128,255,0.95)';
+      ctx.fill();
+    }
+  }
+  // 计时小屏
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + w * 0.70, y + lampH * 0.22, w * 0.22, lampH * 0.56, 2)
+    : ctx.rect(x + w * 0.70, y + lampH * 0.22, w * 0.22, lampH * 0.56);
+  ctx.fillStyle = 'rgba(12,17,22,0.95)';
+  ctx.fill();
+  ctx.font = '9px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(168,128,255,0.95)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.round(o.seconds ?? 40)} s`, x + w * 0.81, y + lampH * 0.50);
+  // 光锥
+  if (o.on !== false) {
+    const cone = ctx.createLinearGradient(0, y + lampH, 0, trayY);
+    cone.addColorStop(0, 'rgba(168,128,255,0.20)');
+    cone.addColorStop(1, 'rgba(168,128,255,0.04)');
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.16, y + lampH);
+    ctx.lineTo(x + w * 0.84, y + lampH);
+    ctx.lineTo(x + w * 0.94, trayY);
+    ctx.lineTo(x + w * 0.06, trayY);
+    ctx.closePath();
+    ctx.fillStyle = cone;
+    ctx.fill();
+  }
+  // 夹好的三明治
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + w * 0.06, trayY, w * 0.88, trayH, 3) : ctx.rect(x + w * 0.06, trayY, w * 0.88, trayH);
+  ctx.fillStyle = 'rgba(40,48,56,0.85)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.soft;
+  ctx.stroke();
+  // 印相卡（曝光态：黄绿底 + 普鲁士白花纹）
+  cyanotypePrint(ctx,
+    { x: x + w * 0.13, y: trayY + trayH * 0.14, w: w * 0.74, h: trayH * 0.64 },
+    { state: 'exposed', density: o.density ?? 0.96, ...(o.print || {}) });
+  // 上板（半透明亚克力）
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + w * 0.10, trayY + trayH * 0.08, w * 0.80, trayH * 0.76, 2)
+    : ctx.rect(x + w * 0.10, trayY + trayH * 0.08, w * 0.80, trayH * 0.76);
+  ctx.fillStyle = 'rgba(200,220,235,0.10)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(180,200,215,0.45)';
+  ctx.stroke();
+  // 四角夹子
+  ctx.fillStyle = 'rgba(60,68,76,0.95)';
+  for (const [cx0, cy0] of [[0.08, 0.06], [0.90, 0.06], [0.08, 0.90], [0.90, 0.90]]) {
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x + w * cx0, trayY + trayH * cy0, w * 0.05, trayH * 0.10, 2)
+      : ctx.rect(x + w * cx0, trayY + trayH * cy0, w * 0.05, trayH * 0.10);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * 显影盘：长方形相片盘 + 水 + 正在显影的印相卡。
+ * o = { density, oxidized, mottle, t, sheen }
+ */
+export function developTray(ctx, box, o = {}) {
+  const { x, y, w, h } = box;
+  const r = Math.min(6, w * 0.06);
+  ctx.save();
+  // 盘体（外沿 + 内底）
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, y + h * 0.16, w, h * 0.80, r) : ctx.rect(x, y + h * 0.16, w, h * 0.80);
+  ctx.fillStyle = 'rgba(48,56,64,0.92)';
+  ctx.fill();
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x + w * 0.05, y + h * 0.24, w * 0.90, h * 0.64, r * 0.6)
+    : ctx.rect(x + w * 0.05, y + h * 0.24, w * 0.90, h * 0.64);
+  ctx.fillStyle = 'rgba(28,36,44,0.95)';
+  ctx.fill();
+  // 水
+  ctx.fillStyle = 'rgba(180,210,228,0.30)';
+  ctx.fill();
+  // 水面微光（随时间轻微起伏）
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  const t = o.t || 0;
+  for (let k = 0; k < 3; k++) {
+    const yy = y + h * (0.36 + 0.16 * k) + Math.sin(t * 0.8 + k) * 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.10, yy);
+    ctx.lineTo(x + w * 0.90, yy);
+    ctx.stroke();
+  }
+  // 盘中正在显影的印相卡
+  cyanotypePrint(ctx,
+    { x: x + w * 0.20, y: y + h * 0.30, w: w * 0.60, h: h * 0.50 },
+    { state: 'washed', oxidized: o.oxidized ?? 0.35, density: o.density ?? 0.96, mottle: o.mottle || 0, sheen: true });
+  ctx.restore();
 }
 
 /* ============================================================

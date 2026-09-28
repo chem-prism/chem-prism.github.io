@@ -91,6 +91,14 @@ const items = [
         { liquid: i === 0 ? [225, 232, 238, 0.2] : [214, 78, 92, 0.55] });
     }
   }],
+  ['蓝晒印相卡 成品', (c, b) => G.cyanotypePrint(c,
+    { x: b.x + 18, y: b.y + b.h * 0.34, w: b.w - 36, h: (b.w - 36) * 0.72 },
+    { state: 'washed', density: 0.96, oxidized: 1 })],
+  ['紫外曝光箱', (c, b) => G.uvExposureBox(c, { x: b.x, y: b.y + 12, w: b.w, h: b.h - 24 },
+    { on: true, seconds: 40 })],
+  ['显影盘（显影中）', (c, b) => G.developTray(c,
+    { x: b.x, y: b.y + b.h * 0.26, w: b.w, h: b.h * 0.52 },
+    { density: 0.9, oxidized: 0.4, t: 1.2 })],
 ];
 
 const ROWS = Math.ceil(items.length / COLS);
