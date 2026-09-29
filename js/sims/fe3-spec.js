@@ -8,7 +8,7 @@
  * 计量式全在 chem.js 的「硫酸亚铁铵中 Fe³⁺ 含量（分光光度法）」一节，
  * 可 node 验算；显色/仪器操作偏差是**教学标定模型**，在本文件 model() 中逐项标注。
  */
-import { h } from './common.js';
+import { h, noteAt } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   FE_SPEC, fe3StandardSeries, fe3Molarity, fe3Spectrum, fe3MinPH,
@@ -180,15 +180,6 @@ function feColor(ug, alpha = 0.8) {
   return [c[0], c[1], c[2], alpha];
 }
 
-function note(ctx, x, y, text, color = 'rgba(160,180,196,0.9)') {
-  ctx.save();
-  ctx.font = '600 11px "PingFang SC", sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
 
 function flaskRow(ctx, B, cx, items, w = 46) {
   // items: [{ug, label}]，从左到右排在台面上
@@ -227,7 +218,7 @@ function draw(ctx, W, H, t, i, r, ops) {
       { liquid: CLEAR_COLOR, level: 0.6, label: ['1:4 H₂SO₄'] });
     reagentBottle(ctx, { x: cx + 82, y: B - 130, w: 50, h: 130 },
       { liquid: CLEAR_COLOR, level: 0.6, label: ['20% KSCN'] });
-    note(ctx, cx - 135, B - 186, '煮沸除 O₂，冷却后使用', '#e8a33d');
+    noteAt(ctx, cx - 135, B - 186, '煮沸除 O₂，冷却后使用', '#e8a33d');
     return;
   }
   if (i === 1) {
@@ -235,19 +226,19 @@ function draw(ctx, W, H, t, i, r, ops) {
       { liquid: feColor(200, 0.5), level: 0.6, label: ['铁标液', '100 µg/mL'] });
     pipette(ctx, { x: cx - 60, y: B - 170, w: 120, h: 26 }, { angle: -0.5 });
     volumetricFlask(ctx, { x: cx + 20, y: B - 210, w: 96, h: 210 }, { liquid: feColor(200, 0.5), level: 0.6 });
-    note(ctx, cx + 74, B - 232, '8 mL 1 M H₂SO₄ → 100 mL', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx + 74, B - 232, '8 mL 1 M H₂SO₄ → 100 mL', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 2) {
     flaskRow(ctx, B, cx, r.spec.map((s, k) => ({ ug: s.ug, label: String(s.ug) })));
-    note(ctx, 14, 40, '0 / 2 / 4 / 6 / 8 / 10 mL 铁标液 + 各 5.00 mL 酸与 KSCN → 50 mL', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, 14, 40, '0 / 2 / 4 / 6 / 8 / 10 mL 铁标液 + 各 5.00 mL 酸与 KSCN → 50 mL', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 3) {
     balance(ctx, { x: cx - 155, y: B - 150, w: 110, h: 150 },
       { item: true, itemColor: [150, 214, 204, 0.8], reading: ops.mSample.toFixed(4) });
     volumetricFlask(ctx, { x: cx + 30, y: B - 210, w: 96, h: 210 }, { liquid: feColor(r.ugTrue), level: 0.6 });
-    note(ctx, cx - 155, B - 168, '无氧水溶解、完全转移', '#e8a33d');
+    noteAt(ctx, cx - 155, B - 168, '无氧水溶解、完全转移', '#e8a33d');
     return;
   }
   if (i === 4) {
@@ -265,19 +256,19 @@ function draw(ctx, W, H, t, i, r, ops) {
       ctx.fillText(d.toFixed(3), bx + 10, B + 6);
       ctx.restore();
     });
-    note(ctx, 14, 40, ops.cuvettePaired === 0 ? '配对差值 ≤ 0.005 ✓' : '配对差值超 0.005 ✗', ops.cuvettePaired === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, 14, 40, ops.cuvettePaired === 0 ? '配对差值 ≤ 0.005 ✓' : '配对差值超 0.005 ✗', ops.cuvettePaired === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 5) {
     spectrophotometer(ctx, { x: cx - 170, y: B - 190, w: 210, h: 190 },
       { wavelength: 480, reading: r.aMax.toFixed(3), cell: feColor(200) });
-    note(ctx, 14, 40, '试剂空白参比 · 最浓标准扫描 · 每换波长重新调零', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, 14, 40, '试剂空白参比 · 最浓标准扫描 · 每换波长重新调零', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 6) {
     flaskRow(ctx, B, cx - 40, r.spec.map((s, k) => ({ ug: s.ug, label: String(s.ug) })), 40);
     stopwatch(ctx, { x: cx + 160, y: B - 130, w: 58, h: 80 }, { text: `${ops.developMinutes}:00` });
-    note(ctx, 14, 40, ops.developMinutes >= 10 ? '避光静置 10 min（同批一起测）' : `只静置了 ${ops.developMinutes} min——显色未完全`, ops.developMinutes >= 10 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, 14, 40, ops.developMinutes >= 10 ? '避光静置 10 min（同批一起测）' : `只静置了 ${ops.developMinutes} min——显色未完全`, ops.developMinutes >= 10 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 7) {
@@ -291,14 +282,14 @@ function draw(ctx, W, H, t, i, r, ops) {
     spectrophotometer(ctx, { x: cx - 170, y: B - 190, w: 210, h: 190 },
       { wavelength: ops.sampleWavelength === 1 ? 500 : 480, reading: r.aSample.toFixed(3), cell: feColor(r.ugTrue) });
     volumetricFlask(ctx, { x: cx + 70, y: B - 200, w: 92, h: 200 }, { liquid: feColor(r.ugTrue), level: 0.6 });
-    note(ctx, 14, 40, ops.sampleWavelength === 1 ? '样品用了 500 nm——标准曲线是 480 nm 的' : '同波长、同参比、同批测量', ops.sampleWavelength === 1 ? '#e05a4f' : 'rgba(160,180,196,0.9)');
+    noteAt(ctx, 14, 40, ops.sampleWavelength === 1 ? '样品用了 500 nm——标准曲线是 480 nm 的' : '同波长、同参比、同批测量', ops.sampleWavelength === 1 ? '#e05a4f' : 'rgba(160,180,196,0.9)');
     return;
   }
   // i === 9：计算与讨论
   spectrophotometer(ctx, { x: cx - 170, y: B - 190, w: 210, h: 190 },
     { wavelength: 480, reading: r.aSample.toFixed(3), cell: feColor(r.ugTrue) });
-  note(ctx, 14, 40, `ε ≈ ${r.eps.toExponential(1)} L·mol⁻¹·cm⁻¹（由标准曲线斜率求得）`);
-  note(ctx, 14, 58, `试样 Fe³⁺ ${r.res.mgPerG.toFixed(3)} mg/g → ${r.grade} 级`, 'rgba(160,180,196,0.9)');
+  noteAt(ctx, 14, 40, `ε ≈ ${r.eps.toExponential(1)} L·mol⁻¹·cm⁻¹（由标准曲线斜率求得）`);
+  noteAt(ctx, 14, 58, `试样 Fe³⁺ ${r.res.mgPerG.toFixed(3)} mg/g → ${r.grade} 级`, 'rgba(160,180,196,0.9)');
 }
 
 /* ---------- 微观层 ---------- */
@@ -615,3 +606,10 @@ export function mount(root, params = {}) {
     },
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

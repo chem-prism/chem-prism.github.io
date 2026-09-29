@@ -7,7 +7,7 @@
  * 计量关系全在 chem.js 的「配位滴定法测定水硬度」一节，可 node 验算；
  * 本文件里的操作偏差修正与平行离差放大是**教学标定模型**，逐项标注。
  */
-import { h } from './common.js';
+import { h, noteAt, pourStream } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   edtaStandardization, waterHardnessReport, edtaNominalConcentration, stdev,
@@ -237,15 +237,6 @@ function flaskLabel(ctx, box, text) {
   ctx.restore();
 }
 
-function note(ctx, x, y, text, color = 'rgba(160,180,196,0.9)') {
-  ctx.save();
-  ctx.font = '600 11px "PingFang SC", sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
 
 function draw(ctx, W, H, t, i, r, ops) {
   const B = drawBench(ctx, W, H);
@@ -277,7 +268,7 @@ function draw(ctx, W, H, t, i, r, ops) {
       { item: true, itemColor: [222, 222, 218, 0.85], reading: ops.mCaCO3.toFixed(4) });
     beaker(ctx, { x: cx - 22, y: B - 108, w: 90, h: 108 }, { liquid: [225, 232, 238, 0.22], level: 0.14 });
     // 表面皿扣在烧杯口上（皿沿坐在杯口、弧面略探入杯内）
-    watchGlass(ctx, { x: cx - 30, y: B - 98, w: 106, h: 26 }, { t });
+    watchGlass(ctx, { x: cx - 30, y: B - 98, w: 106, h: 26 }, {});   // 当盖子用，没有晶体，故不传 crystal/t
     reagentBottle(ctx, { x: cx + 88, y: B - 122, w: 40, h: 122 },
       { shape: 'drop', liquid: [222, 232, 240, 0.25], level: 0.5, label: ['HCl'] });
     return;
@@ -286,7 +277,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     hotplate(ctx, { x: cx - 158, y: B - 58, w: 200, h: 58 }, { heat: 0.8, steam: 0.30, t });
     beaker(ctx, { x: cx - 142, y: B - 168, w: 92, h: 110 }, { liquid: [228, 230, 224, 0.24], level: 0.42 });
     bubbles(ctx, { x: cx - 130, y: B - 152, w: 68, h: 82 }, t, 0.5);
-    watchGlass(ctx, { x: cx - 146, y: B - 100, w: 100, h: 24 }, { t });
+    watchGlass(ctx, { x: cx - 146, y: B - 100, w: 100, h: 24 }, {});  // 同上：表面皿在这里是盖，不是盛晶体的皿
     volumetricFlask(ctx, { x: cx + 88, y: B - 205, w: 86, h: 205 },
       { liquid: CLEAR_COLOR, level: 0.55 });
     return;
@@ -297,21 +288,15 @@ function draw(ctx, W, H, t, i, r, ops) {
     const buretteBox = { x: cx - 28, y: H * 0.03, w: 56, h: H * 0.40 };
     const levels = { 3: 0.62, 4: 0.36, 5: 0.44, 6: 0.32, 7: 0.60 };
     burette(ctx, buretteBox, { level: levels[i] ?? 0.5, liquid: [160, 215, 205, 0.35] });
-    ctx.save();
-    ctx.strokeStyle = 'rgba(160,215,205,0.55)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, buretteBox.y + buretteBox.h);
-    ctx.lineTo(cx, flaskBox.y + 8);
-    ctx.stroke();
-    ctx.restore();
+    pourStream(ctx, { x: cx, y: buretteBox.y + buretteBox.h }, { x: cx, y: flaskBox.y + 8 },
+      { color: [160, 215, 205], alpha: 0.55, width: 3, t });
   }
 
   if (i === 3) {
     conicalFlask(ctx, flaskBox, { liquid: [225, 232, 238, 0.22], level: 0.42 });
     reagentBottle(ctx, { x: cx + 66, y: B - 130, w: 48, h: 130 },
       { liquid: C_MGEDTA, level: 0.5, label: ['Mg-EDTA'] });
-    note(ctx, cx + 64, B - 152, '已预加 15 mL（不记数）');
+    noteAt(ctx, cx + 64, B - 152, '已预加 15 mL（不记数）');
     return;
   }
   if (i === 4) {
@@ -338,11 +323,11 @@ function draw(ctx, W, H, t, i, r, ops) {
         t, 0.8 * r.mgHidden);
     }
     if (failBase) {
-      note(ctx, 14, 54, '指示剂自身酒红，', '#e05a4f');
-      note(ctx, 14, 68, '「酒红→纯蓝」突变消失', '#e05a4f');
+      noteAt(ctx, 14, 54, '指示剂自身酒红，', '#e05a4f');
+      noteAt(ctx, 14, 68, '「酒红→纯蓝」突变消失', '#e05a4f');
     } else if (failAcid) {
-      note(ctx, 14, 54, 'pH 太低，', '#e05a4f');
-      note(ctx, 14, 68, '钙指示剂无法显色', '#e05a4f');
+      noteAt(ctx, 14, 54, 'pH 太低，', '#e05a4f');
+      noteAt(ctx, 14, 68, '钙指示剂无法显色', '#e05a4f');
     } else {
       colorStrip(ctx, ['酒红', '蓝紫', '纯蓝'], [caColor(1), caColor(0.5), caColor(0)]);
     }
@@ -693,3 +678,10 @@ export function mount(root, params = {}) {
     },
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

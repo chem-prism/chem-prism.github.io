@@ -37,10 +37,20 @@ import * as phAcetic from './sims/ph-acetic.js';
 import * as fe3Spec from './sims/fe3-spec.js';
 import * as cyanotype from './sims/cyanotype.js';
 import * as complexChem from './sims/complex-chem.js';
+import { GROUPS, hostsOf, isCore } from './sims/groups.js';
+// 命名空间导入，**不要写成具名导入**：浏览器若拿着旧版 lab-shell.js（没有这个导出），
+// `import { SHELL_BUILD }` 会在链接阶段抛「does not provide an export named」，
+// 整页白屏——那比「少一个标签」严重得多。命名空间导入拿不到就是 undefined，不会炸。
+import * as labShell from './sims/lab-shell.js';
 
-// 顺序 = 左栏显示顺序，按分析化学的知识脉络编排：
-//   四大滴定 → 电化学 → 光谱 → 色谱与分离 → 数据处理 → 课程实验
-// 最后一个是「过程型」模拟器，还原课程里的完整操作链，与前面的参数型不同类。
+/* 建站版本。静态站点没有构建步骤，浏览器里可能新旧模块混着跑；
+   这行把 app.js 与 lab-shell.js 各自的版本一起打到控制台，
+   对不上就说明浏览器拿着旧缓存——硬刷新（⌘⇧R）即可。
+   2026-09-29 在 Edge 上真踩过一次：导航是新的，实验页却少了「拓展模块」标签。 */
+const BUILD = '2026-09-29b';
+
+// 顺序 = 左栏分组内、以及「其他仪器方法」组内的显示顺序。
+// 左栏一级导航由 groups.js 的 GROUPS 给出（10 个课程实验），本数组只管模块注册。
 const SIMS = [
   titration, distribution, edta, complexometry, redox, precipitate,
   potentiometry, spectrophotometry, ir, aas, ms,
@@ -50,6 +60,32 @@ const SIMS = [
   cyanotype, complexChem,
 ];
 const byId = id => SIMS.find(s => s.meta.id === id) || SIMS[0];
+
+/* --- 分组自检（只在控制台，不打断页面） ---
+ * byId 找不到时会静默回落到 titration，分组表里若写错一个 id，
+ * 左栏就会悄悄多出一个「酸碱滴定曲线」而没人发现。所以导航走严格查找。 */
+function navSim(id) {
+  const s = SIMS.find(x => x.meta.id === id);
+  if (!s) console.error(`分组表里的 id 不存在：${id}（该分组项已跳过）`);
+  return s;
+}
+function checkGroups() {
+  const covered = new Set(GROUPS.flatMap(g => [...(g.core ? [g.core] : []), ...g.ext]));
+  const orphan = SIMS.map(s => s.meta.id).filter(id => !covered.has(id));
+  if (orphan.length) console.error('这些模拟器没有出现在任何分组里，学生点不到：', orphan);
+  // 左栏的可点条目 = 10 个实验 + 「其他仪器方法」那 3 个。
+  // 注意别把 .nav-group-label（那是个 div，不是 .nav-item）也算进来——算错过一次，
+  // 结果是每个页面都往控制台吐一条假的「实为 14 项」。
+  const railItems = GROUPS.reduce((n, g) => n + (g.core ? 1 : g.ext.length), 0);
+  if (railItems !== 13) console.error(`左栏应有 10 个实验 + 3 个其他仪器方法 = 13 项，实为 ${railItems} 项`);
+}
+checkGroups();
+{
+  const shell = labShell.SHELL_BUILD;   // 旧版 lab-shell 里没有这个导出，会是 undefined
+  const stale = shell == null;
+  console.log(`化学三棱镜 · 工作台 build ${BUILD}｜lab-shell ${shell ?? '缺失（旧版缓存）'}`
+    + (stale ? '　⚠️ 浏览器拿着旧版 lab-shell.js：实验页会少「拓展模块」标签，请硬刷新（⌘⇧R）' : ''));
+}
 
 const rail = document.getElementById('rail');
 const main = document.getElementById('main');
@@ -70,24 +106,68 @@ function readParams() {
   return { sim, task, opts };
 }
 
-/* ---------- 导航 ---------- */
-function buildNav(activeId) {
+/* ---------- 导航 ----------
+ * 左栏只有 10 个课程实验的名字（外加「其他仪器方法」下 3 个不属于任何实验的模块）。
+ * 拓展模块**不进左栏**——它们只在实验页的第三个标签里，和教学模式、练习模式并列。
+ * 所以左栏不显示实验编号、不显示拓展模块，点一个实验就是进那一个实验。
+ */
+function navButton(sim, activeId, sub) {
   // 注意：必须用 className，Object.assign 设的 `class` 只是 JS 属性，不会写到 DOM 上
+  const btn = document.createElement('button');
+  btn.className = sub ? 'nav-item nav-sub' : 'nav-item';
+  btn.setAttribute('aria-current', String(sim.meta.id === activeId));
+  btn.style.setProperty('--dot', `var(${sim.meta.accent})`);
+  btn.innerHTML = `<span class="nav-dot"></span><span>${sim.meta.name}</span>`;
+  btn.onclick = () => navigate(sim.meta.id, {});
+  return btn;
+}
+
+function buildNav(activeId) {
   const label = document.createElement('div');
   label.className = 'rail-label';
-  label.textContent = '模拟器';
-  rail.replaceChildren(
-    label,
-    ...SIMS.map(s => {
-      const btn = document.createElement('button');
-      btn.className = 'nav-item';
-      btn.setAttribute('aria-current', String(s.meta.id === activeId));
-      btn.style.setProperty('--dot', `var(${s.meta.accent})`);
-      btn.innerHTML = `<span class="nav-dot"></span><span>${s.meta.name}</span>`;
-      btn.onclick = () => navigate(s.meta.id, {});
-      return btn;
-    })
-  );
+  label.textContent = '课程实验';
+
+  const nodes = [];
+  for (const g of GROUPS) {
+    if (g.core) {
+      const s = navSim(g.core);
+      if (s) nodes.push(navButton(s, activeId));
+      continue;
+    }
+    // 没有对应实验的一组（其他仪器方法）：小标题 + 它的模块，缩进列在最后
+    const t = document.createElement('div');
+    t.className = 'nav-group-label';
+    t.textContent = g.title;
+    nodes.push(t,
+      ...g.ext.map(navSim).filter(Boolean).map(s => navButton(s, activeId, true)));
+  }
+  rail.replaceChildren(label, ...nodes);
+}
+
+/* ---------- 归属提示 ----------
+ * 智能体派的是参数型链接（?sim=titration）时，左栏 10 个实验都不会高亮——
+ * 学生不知道这个页面从哪来。顶部给一条提示，说明它是哪个（哪几个）实验的拓展模块。
+ * 课程实验自己的页面不需要这条。
+ */
+function hostHint(activeId) {
+  const hosts = hostsOf(activeId);
+  if (!hosts.length) return null;
+  const box = document.createElement('div');
+  box.className = 'host-hint rise rise-1';
+  const names = hosts.map(id => byId(id).meta.name);
+  box.innerHTML = `<span class="host-tag">拓展模块</span>`
+    + `<span>这个模拟器挂在 ${names.map(n => `<b>${n}</b>`).join('、')} 下</span>`;
+  const row = document.createElement('span');
+  row.className = 'host-actions';
+  hosts.forEach((id, i) => {
+    const b = document.createElement('button');
+    b.className = 'host-link';
+    b.textContent = `去「${names[i]}」`;
+    b.onclick = () => navigate(id, {});
+    row.append(b);
+  });
+  box.append(row);
+  return box;
 }
 
 /* ---------- 参数持久化 ----------
@@ -152,9 +232,11 @@ function navigate(id, opts, task) {
   const heads = document.createElement('div');
   heads.className = 'sim-head rise';
   heads.innerHTML = `
-    <h1 class="sim-title">${sim.meta.name}<span class="wave">${sim.meta.wave}</span></h1>
+    <h1 class="sim-title">${sim.meta.name}${isCore(sim.meta.id) ? '' : `<span class="wave">${sim.meta.wave}</span>`}</h1>
     <p class="sim-desc">${sim.meta.desc}</p>`;
   main.append(heads);
+  const hint = hostHint(sim.meta.id);
+  if (hint) main.append(hint);
 
   if (taskText) {
     const t = document.createElement('div');

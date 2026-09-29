@@ -7,7 +7,7 @@
  * 计量式与光解/颜色模型在 chem.js 的「光敏剂与蓝晒」（可 node 验算）；
  * 产率各环节的损失因子是**教学标定模型**，在本文件 model() 中逐项标注。
  */
-import { h } from './common.js';
+import { h, noteAt } from './common.js';
 import {
   cyanotypeYield, photolysisFraction, prussianBlueColor,
 } from '../chem.js';
@@ -180,15 +180,6 @@ function model(ops) {
 
 /* ---------- 宏观层 ---------- */
 
-function note(ctx, x, y, text, color = 'rgba(160,180,196,0.9)') {
-  ctx.save();
-  ctx.font = '600 11px "PingFang SC", sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
 
 function flaskLabel(ctx, box, text) {
   ctx.save();
@@ -252,8 +243,8 @@ function draw(ctx, W, H, t, i, r, ops) {
   if (i === 1) {
     hotplate(ctx, { x: cx - 150, y: B - 56, w: 190, h: 56 }, { heat: 0.85, steam: 0.35, t });
     beaker(ctx, { x: cx - 135, y: B - 162, w: 92, h: 106 }, { liquid: [232, 216, 120, 0.55], level: 0.52 });
-    note(ctx, cx - 135, B - 184, '煮沸、不断搅拌（防爆沸）', 'rgba(160,180,196,0.9)');
-    note(ctx, cx + 20, B - 120, '黄色 FeC₂O₄·2H₂O ↓', '#e8c23d');
+    noteAt(ctx, cx - 135, B - 184, '煮沸、不断搅拌（防爆沸）', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx + 20, B - 120, '黄色 FeC₂O₄·2H₂O ↓', '#e8c23d');
     return;
   }
   if (i === 2) {
@@ -261,27 +252,27 @@ function draw(ctx, W, H, t, i, r, ops) {
     // 沉降在底的黄色沉淀
     crystals(ctx, { x: cx - 108, y: B - 32, w: 80, h: 24 }, t, 0.75,
       { color: [226, 196, 90, 0.85], spin: false });
-    note(ctx, cx + 10, B - 96, '倾析：清液沿玻璃棒倒出', 'rgba(160,180,196,0.9)');
-    note(ctx, cx + 10, B - 76, '沉淀留在杯底', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx + 10, B - 96, '倾析：清液沿玻璃棒倒出', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx + 10, B - 76, '沉淀留在杯底', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 3) {
     waterBath(ctx, { x: cx - 150, y: B - 96, w: 220, h: 96 }, { steam: 0.5, t, ringW: 100 });
     beaker(ctx, { x: cx - 128, y: B - 176, w: 84, h: 96 }, { liquid: [196, 170, 120, 0.5], level: 0.52 });
-    note(ctx, cx - 150, B - 198, '水浴 40 ℃、慢滴 20 mL 3% H₂O₂、搅拌 5 min', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx - 150, B - 198, '水浴 40 ℃、慢滴 20 mL 3% H₂O₂、搅拌 5 min', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 4) {
     hotplate(ctx, { x: cx - 150, y: B - 56, w: 190, h: 56 }, { heat: 0.8, steam: 0.30, t });
     beaker(ctx, { x: cx - 135, y: B - 162, w: 92, h: 106 }, { liquid: [96, 196, 150, 0.60], level: 0.55 });
-    note(ctx, cx - 135, B - 184, '近沸腾：先加 5 mL、再慢慢加 3 mL 饱和草酸', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx - 135, B - 184, '近沸腾：先加 5 mL、再慢慢加 3 mL 饱和草酸', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 5) {
     funnel(ctx, { x: cx - 130, y: B - 200, w: 78, h: 88 }, { liquid: [96, 196, 150, 0.55], level: 0.5, stemLevel: 0.7 });
     beaker(ctx, { x: cx - 138, y: B - 108, w: 96, h: 108 }, { liquid: [96, 196, 150, 0.55], level: 0.36 });
-    note(ctx, cx + 10, B - 170, `趁热过滤（${ops.Tfilter} ℃）`, ops.Tfilter >= 85 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
-    note(ctx, cx + 10, B - 150, '冷了 → 产物结晶在滤纸上', 'rgba(160,180,196,0.75)');
+    noteAt(ctx, cx + 10, B - 170, `趁热过滤（${ops.Tfilter} ℃）`, ops.Tfilter >= 85 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, cx + 10, B - 150, '冷了 → 产物结晶在滤纸上', 'rgba(160,180,196,0.75)');
     return;
   }
   if (i === 6) {
@@ -296,7 +287,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     flaskLabel(ctx, boxes[1], '1/3 单晶');
     beaker(ctx, boxes[2], { liquid: [96, 196, 150, 0.55], level: 0.5 });
     flaskLabel(ctx, boxes[2], '1/3 蓝晒');
-    note(ctx, 14, 40, '准确知道总体积与 1/3 体积——产率计算要用');
+    noteAt(ctx, 14, 40, '准确知道总体积与 1/3 体积——产率计算要用');
     return;
   }
   if (i === 7) {
@@ -304,15 +295,15 @@ function draw(ctx, W, H, t, i, r, ops) {
     crystals(ctx, { x: cx - 140, y: B - 44, w: 70, h: 34 }, t, 0.7, { color: CRYSTAL_GREEN, spin: false });
     reagentBottle(ctx, { x: cx - 30, y: B - 118, w: 48, h: 118 },
       { liquid: CLEAR_COLOR, level: 0.6, label: ['95% 乙醇'] });
-    note(ctx, cx + 40, B - 96, `乙醇 ${ops.ethanolVol} mL——把水「挤走」逼它结晶`, ops.ethanolVol >= 10 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
-    note(ctx, cx + 40, B - 76, '再用少量乙醇淋洗、抽干', 'rgba(160,180,196,0.75)');
+    noteAt(ctx, cx + 40, B - 96, `乙醇 ${ops.ethanolVol} mL——把水「挤走」逼它结晶`, ops.ethanolVol >= 10 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, cx + 40, B - 76, '再用少量乙醇淋洗、抽干', 'rgba(160,180,196,0.75)');
     return;
   }
   if (i === 8) {
     balance(ctx, { x: cx - 150, y: B - 150, w: 110, h: 150 },
       { item: true, itemColor: CRYSTAL_GREEN, reading: r.mActual.toFixed(3), tone: r.yieldPct >= 65 ? 'good' : r.yieldPct >= 40 ? 'warn' : 'bad' });
     watchGlass(ctx, { x: cx - 10, y: B - 118, w: 118, h: 34 }, { crystal: 0.8, crystalColor: CRYSTAL_GREEN, t });
-    note(ctx, cx + 120, B - 100, '避光晾干（见光会变黄）', ops.dryPlace === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, cx + 120, B - 100, '避光晾干（见光会变黄）', ops.dryPlace === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 9) {
@@ -321,7 +312,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     cyanotypePrint(ctx, { x: cx - 42, y: B - 108, w: 100, h: 72 }, { state: 'washed', density: 0, oxidized: 0 });
     flaskLabel(ctx, { x: cx - 42, y: B - 108, w: 100, h: 72 }, '涂布相纸');
     brushGlyph(ctx, { x: cx + 78, y: B - 130, w: 54, h: 130 }, {});
-    note(ctx, 14, 40, '先纵后横、均匀且薄；晾干后再曝光', ops.brushTechnique === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, 14, 40, '先纵后横、均匀且薄；晾干后再曝光', ops.brushTechnique === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 10) {
@@ -347,9 +338,9 @@ function draw(ctx, W, H, t, i, r, ops) {
       }
       ctx.restore();
     }
-    note(ctx, 14, 40, ops.exposureSource === 0 ? `紫外灯 ${ops.uvSeconds} s（光解分数 ${(r.expo.f * 100).toFixed(0)}%）` : `阳光 ${ops.sunMinutes} min（≈ ${Math.round(r.expo.dose)} UV-s）`,
+    noteAt(ctx, 14, 40, ops.exposureSource === 0 ? `紫外灯 ${ops.uvSeconds} s（光解分数 ${(r.expo.f * 100).toFixed(0)}%）` : `阳光 ${ops.sunMinutes} min（≈ ${Math.round(r.expo.dose)} UV-s）`,
       r.expo.f >= 0.85 ? 'rgba(160,180,196,0.9)' : '#e8a33d');
-    if (r.blur > 0) note(ctx, 14, 58, '未干就曝光——花纹会洇开', '#e05a4f');
+    if (r.blur > 0) noteAt(ctx, 14, 58, '未干就曝光——花纹会洇开', '#e05a4f');
     return;
   }
   // i === 11：显影盘 + 成品
@@ -360,7 +351,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     state: 'washed', density: r.density, oxidized: 1, mottle: r.mottle, blur: r.blur,
   });
   flaskLabel(ctx, { x: cx + 70, y: B - 150, w: 130, h: 94 }, '晾干后的成品');
-  if (r.mottle > 0.1) note(ctx, 14, 40, '流水冲洗/涂布不均——画面有洇痕', '#e05a4f');
+  if (r.mottle > 0.1) noteAt(ctx, 14, 40, '流水冲洗/涂布不均——画面有洇痕', '#e05a4f');
 }
 
 /* ---------- 微观层 ---------- */
@@ -651,3 +642,10 @@ export function mount(root, params = {}) {
     cleanup: () => { if (doseChart) doseChart.destroy(); },
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

@@ -6,13 +6,12 @@
  * P(H2)=P-P(H2O)；漏斗与量气管水面不同高时还会有静压差。
  */
 import { magnesiumMolarMass, magnesiumDuplicate, M_MG } from '../chem.js';
-import { h } from './common.js';
+import { h, noteAt } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   balance, testTube, gasMeasuringTube, retortStand, tubing, thermometer,
   bubbles, CLEAR_COLOR, IRON_POWDER_COLOR,
-  drawBench,
-} from '../glassware.js';
+  drawBench, funnel, GLASS } from '../glassware.js';
 
 export const meta = {
   id: 'magnesium-molar',
@@ -56,7 +55,7 @@ const STEPS = [
   { name: '平行测定与验算', op: '重复第二份镁带，比较两次结果并与 Mg 理论摩尔质量 24.305 g·mol⁻¹ 对照。', why: '两次结果接近才能说明装置和读数操作具有重复性。', eq: 'M(Mg)=m(Mg)/n(H₂)', calc: 'n(H₂)=(P−P(H₂O))V/(RT)，理论值 24.305 g·mol⁻¹' },
 ];
 
-function draw(ctx, W, H, t, i, r, ops) {
+function draw(ctx, W, H, t, i, r, ops, ts = 0) {
   const B = drawBench(ctx, W, H);   // 台面线统一在 glassware.js 的 BENCH_Y
   const cx = W / 2;
   if (i === -1) {
@@ -77,35 +76,110 @@ function draw(ctx, W, H, t, i, r, ops) {
     });
     return;
   }
-  const tube = { x: cx + 50, y: H * 0.13, w: 72, h: H * 0.67 };
+  /* 课件第 4 页「图 3.2 置换法测定镁摩尔质量的装置」的三件套，从左到右：
+   *   1 反应管（大试管，夹持悬空，管口有塞子引出弯玻璃导管接量气筒顶端）
+   *   2 量气筒（细长刻度管，下端收口，瓶口带塞）
+   *   3 漏斗　　（水位调节器，其管脚经橡皮管与量气筒底部相连，兜成 U 形）
+   * 第 6/7/10 页反复讲「漏斗与量气管水面保持同一水平位置」——漏斗是这套装置的核心交互点，
+   * 漏画它，第 3/6 步那条「校平」绿线就两头插在空气里，没有可对齐的对象。 */
   const reaction = i === 4;
   const cooled = i >= 5;
-  retortStand(ctx, { x: cx - 205, y: H * 0.14, w: 135, h: H * 0.70 }, {
-    clamp: { x: cx - 70, y: H * 0.32, radius: 34 },
+
+  const st = retortStand(ctx, { x: 26, y: 22, w: 104, h: B - 22 + 10 }, {
+    clamp: [
+      { x: 152, y: 122, radius: 26 },   // 夹反应管
+      { x: 302, y: 88, radius: 22 },    // 夹量气筒
+    ],
   });
-  testTube(ctx, { x: cx - 105, y: B - 155, w: 48, h: 155 }, {
-    liquid: [150, 205, 214, 0.32], level: i >= 2 ? 0.30 : 0.08,
-  });
+  const [tubeClamp, gasClamp] = st.clamps;
+
+  // ── 1 反应管：挂在铁夹上（悬空），管底不接触台面
+  const rt = { x: tubeClamp.x - 21, y: tubeClamp.y - 39, w: 42, h: 138 };
+  testTube(ctx, rt, { liquid: [150, 205, 214, 0.32], level: i >= 2 ? 0.30 : 0 });
+  // 管口橡胶塞 + 塞上引出的弯玻璃导管
+  ctx.save();
+  ctx.fillStyle = 'rgba(88,80,74,0.9)';
+  ctx.strokeStyle = GLASS.stroke || 'rgba(160,180,196,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(rt.x + 3, rt.y); ctx.lineTo(rt.x + rt.w - 3, rt.y);
+  ctx.lineTo(rt.x + rt.w - 7, rt.y - 11); ctx.lineTo(rt.x + 7, rt.y - 11);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  // 镁带贴着管内壁（不是插在管心）
   if (i >= 2 && i < 5) {
     ctx.save();
-    ctx.strokeStyle = IRON_POWDER_COLOR ? 'rgba(150,160,168,0.95)' : 'rgba(150,160,168,0.95)';
+    ctx.strokeStyle = 'rgba(158,168,176,0.95)';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(cx - 82, B - 132); ctx.lineTo(cx - 82, B - 112); ctx.stroke();
+    ctx.moveTo(rt.x + 6, rt.y + 26); ctx.lineTo(rt.x + 6, rt.y + 48);
+    ctx.stroke();
     ctx.restore();
   }
-  tubing(ctx, [[cx - 57, B - 145], [cx + 2, B - 145], [cx + 2, H * 0.20], [cx + 50, H * 0.20]], { width: 5 });
-  gasMeasuringTube(ctx, tube, {
-    liquid: [150, 190, 215, 0.28], level: i >= 6 ? 0.28 : i >= 3 ? 0.48 : 0.63,
-  });
+
+  // ── 2 量气筒：细长（长径比约 7:1；原来 72×228 是 3.2:1 的矮胖管子）
+  const tube = { x: 286, y: 30, w: 32, h: 235 };
+  const gasLevel = i >= 6 ? 0.28 : i >= 3 ? 0.48 : 0.63;
+  gasMeasuringTube(ctx, tube, { liquid: [150, 190, 215, 0.28], level: gasLevel });
+
+  // 弯玻璃导管：从塞子向上、向右，再下到量气筒**顶端**
+  tubing(ctx, [[rt.x + rt.w / 2, rt.y - 11], [rt.x + rt.w / 2, 56], [tube.x + tube.w / 2, 56],
+    [tube.x + tube.w / 2, tube.y + 2]], { width: 4 });
+
+  /* ── 3 漏斗（水位调节器）：管脚经橡皮管与量气筒底部相连，兜成 U 形。
+   *
+   * 它的高低**跟着量气管的水面走**，不是钉死的——课件第 6 页：
+   * 「手拿漏斗移近量气管，使两者中的水面保持在同一水平位置」，
+   * 第 7 页读数时同样要求两水面同高。做法是让漏斗的水面恒在锥体一半处，
+   * 再把整个漏斗平移到「那一半正好落在量气管的水面高度」上——
+   * 这样两水面**由构造保证**同高，校平线的两端都有实实在在的对象。 */
+  const gasSurfaceY = tube.y + tube.h * (1 - gasLevel);
+  const fnH = 124;
+  /* 「校平」这一步（i=3）要**演示**这个动作：漏斗从偏低的位置滑上来，
+     直到漏斗里的水面与量气管的水面同高。用 ts（本步已进行秒数）而不是 t——
+     用 t 的话页面一加载就演完了，学生切到这一步只能看到结果。
+     其余各步漏斗直接停在正确高度。 */
+  const settling = i === 3;
+  const u = settling ? Math.min(1, ts / 1.6) : 1;
+  const ease = u * u * (3 - 2 * u);                        // smoothstep
+  const fnY = gasSurfaceY - fnH * 0.52 * 0.5 + (1 - ease) * 52;
+  const fn = { x: 432, y: fnY, w: 92, h: fnH };
+  const fnStemTip = fnY + fnH;
+  funnel(ctx, fn, { liquid: [150, 190, 215, 0.30], level: 0.5 });
+  const uY = Math.max(288, fnStemTip + 8);
+  tubing(ctx, [[tube.x + tube.w / 2, tube.y + tube.h], [tube.x + tube.w / 2, uY],
+    [fn.x + fn.w / 2, uY], [fn.x + fn.w / 2, fnStemTip]], { width: 6, color: 'rgba(120,124,128,0.75)' });
+
+  /* ── 校平：绿线同时跨过量气管与漏斗，对得上才说明两水面同高。
+   * i=3 的动画期间，漏斗的水面还没升到绿线，此时**另画一条琥珀色的漏斗水面线**，
+   * 两条线的高度差就是静压差的来源——比一句「要校平」有用得多。 */
   if (i === 3 || i === 6) {
-    ctx.strokeStyle = 'rgba(107,188,87,0.70)';
+    const fnSurfaceY = fnY + fnH * 0.52 * 0.5;    // 构造上 = 锥体一半处
+    ctx.save();
+    ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
-    const y = tube.y + tube.h * (1 - (i === 3 ? 0.48 : 0.28));
-    ctx.beginPath(); ctx.moveTo(tube.x - 18, y); ctx.lineTo(tube.x + tube.w + 26, y); ctx.stroke();
+    if (u < 0.999) {
+      ctx.strokeStyle = 'rgba(232,163,61,0.8)';
+      ctx.beginPath();
+      ctx.moveTo(fn.x - 6, fnSurfaceY);
+      ctx.lineTo(fn.x + fn.w + 16, fnSurfaceY);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(107,188,87,0.75)';
+    ctx.beginPath();
+    ctx.moveTo(tube.x - 16, gasSurfaceY);
+    ctx.lineTo(fn.x + fn.w + 16, gasSurfaceY);
+    ctx.stroke();
+    ctx.restore();
+    if (i === 3) {
+      noteAt(ctx, tube.x - 16, gasSurfaceY - 12,
+        u < 0.999 ? '水面不同高 → 有静压差' : '两水面同高 ✓',
+        u < 0.999 ? 'rgba(232,163,61,0.95)' : 'rgba(107,188,87,0.95)');
+    }
   }
-  if (reaction) bubbles(ctx, { x: cx - 98, y: B - 145, w: 32, h: 100 }, t, 0.9);
-  if (cooled) thermometer(ctx, { x: cx - 10, y: B - 145, w: 20, h: 125 }, {});
+
+  if (reaction) bubbles(ctx, { x: rt.x + 6, y: rt.y + rt.h * 0.45, w: rt.w - 12, h: rt.h * 0.5 }, t, 0.9);
+  // 温度计摆在量气筒右侧空白处——原来放在 x=cx-10 与竖直导管重叠穿模
+  if (cooled) thermometer(ctx, { x: 344, y: 128, w: 18, h: 118 }, {});
 }
 
 function readings(i, r, ops) {
@@ -167,22 +241,31 @@ function verdict(r, ops) {
   return out;
 }
 
+/** 两次平行测定的模型。提到模块级是为了让 sceneSpec 与 mount 引用同一个函数，不会漂移。 */
+function model(ops) {
+  const base = p => magnesiumMolarMass({
+    mMg: p.mMg, vInitial: p.vInitial, vFinal: p.vFinal,
+    temperatureC: p.temperatureC, pressureKPa: p.pressureKPa,
+    waterVaporKPa: p.waterVaporKPa, waterLevelDeltaCm: p.waterLevelDeltaCm,
+    useWaterVaporCorrection: p.vaporCorrection === 0,
+  });
+  const r1 = base({ ...ops, mMg: ops.mMg1, vInitial: ops.vInitial1, vFinal: ops.vFinal1 });
+  const r2 = base({ ...ops, mMg: ops.mMg2, vInitial: ops.vInitial2, vFinal: ops.vFinal2 });
+  const dup = magnesiumDuplicate([r1, r2]);
+  return { ...dup, r1, r2 };
+}
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };
+
 export function mount(root, params = {}) {
   return mountLab(root, params, {
     id: meta.id, name: meta.name, steps: STEPS, controls: CONTROLS,
-    defaults: DEFAULTS, guide: GUIDE,
-    model: ops => {
-      const base = p => magnesiumMolarMass({
-        mMg: p.mMg, vInitial: p.vInitial, vFinal: p.vFinal,
-        temperatureC: p.temperatureC, pressureKPa: p.pressureKPa,
-        waterVaporKPa: p.waterVaporKPa, waterLevelDeltaCm: p.waterLevelDeltaCm,
-        useWaterVaporCorrection: p.vaporCorrection === 0,
-      });
-      const r1 = base({ ...ops, mMg: ops.mMg1, vInitial: ops.vInitial1, vFinal: ops.vFinal1 });
-      const r2 = base({ ...ops, mMg: ops.mMg2, vInitial: ops.vInitial2, vFinal: ops.vFinal2 });
-      const dup = magnesiumDuplicate([r1, r2]);
-      return { ...dup, r1, r2 };
-    },
+    defaults: DEFAULTS, guide: GUIDE, model,
     draw, species, observation, verdict, readings,
     equation: 'Mg + H₂SO₄ → MgSO₄ + H₂↑',
     calculation: (i, r) => i >= 7

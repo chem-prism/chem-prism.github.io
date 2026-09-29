@@ -37,6 +37,11 @@
 
 * { box-sizing: border-box; }
 
+/* hidden 属性必须能压过组件自身的 display ——
+   .lab-representations 是 display:grid、.controls 是 display:flex，
+   单给 hidden 属性它们照样显示。拓展模式切换实验区就靠这条。 */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0; padding: 0;
   background: var(--ink);
@@ -59,7 +64,7 @@ body {
 /* ---------- 布局骨架 ---------- */
 .app {
   display: grid;
-  grid-template-columns: 190px 1fr;
+  grid-template-columns: 212px 1fr;
   grid-template-rows: auto 1fr;
   grid-template-areas: "head head" "rail main";
   min-height: 100vh;
@@ -106,11 +111,23 @@ body {
   padding: 12px 8px;
   display: flex; flex-direction: column; gap: 2px;
   background: rgba(12,17,22,.5);
+  /* 分组后条目变多：矮窗口下要能自己滚。
+     grid 子项默认 min-height:auto，不写这条 overflow 不会生效。 */
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
 }
 
+/* 左栏的两个小标题（「课程实验」「其他仪器方法」）用同一套字：
+   11px / 600 / --dim。之前是 10px 的 --faint（#4c5b67），太暗，
+   而「课程实验」贴着顶栏又没有分隔线撑着，看着比下面那个还轻。 */
+.rail-label, .nav-group-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  color: var(--dim);
+}
 .rail-label {
-  font-size: 10px; letter-spacing: .16em; color: var(--faint);
-  padding: 4px 10px 8px; text-transform: uppercase;
+  padding: 6px 10px 9px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 
 .nav-item {
@@ -143,6 +160,22 @@ body {
 }
 .nav-item[aria-current="false"] .nav-dot { opacity: .45; box-shadow: none; }
 
+/* 左栏 = 10 个课程实验 + 底部「其他仪器方法」。
+   拓展模块不进左栏，它们只在实验页的第三个标签里（见 .lab-mode 一节）。 */
+.nav-group-label {
+  padding: 12px 10px 5px; margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.nav-sub {
+  font-size: 12px; padding: 6px 10px; color: var(--faint);
+  margin-left: 10px; padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.nav-sub .nav-dot { width: 5px; height: 5px; }
+.nav-sub:hover { color: var(--text); }
+.nav-sub[aria-current="true"] { color: var(--text); }
+.nav-sub[aria-current="true"]::before { left: -6px; height: 13px; }
+
 /* ---------- 主区 ---------- */
 .main { grid-area: main; padding: 16px 20px 40px; max-width: 1080px; }
 
@@ -174,6 +207,33 @@ body {
   padding: 1px 5px; flex: none; margin-top: 2px;
 }
 .task-text { font-size: 13.5px; }
+
+/* 归属提示：智能体派的参数型链接没有对应的左栏条目，这里说明它是哪个实验的拓展模块。
+   比任务条轻一档，不跟任务说明抢注意力。 */
+.host-hint {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--faint);
+  border-radius: var(--r);
+  background: rgba(255,255,255,.02);
+  padding: 9px 14px; margin: -4px 0 16px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--dim);
+}
+.host-hint b { color: var(--text); font-weight: 600; }
+.host-tag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  color: var(--faint); border: 1px solid currentColor; border-radius: 3px;
+  padding: 1px 5px; flex: none;
+}
+.host-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.host-link {
+  font-family: var(--sans); font-size: 12px;
+  color: var(--accent); background: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--r); padding: 3px 9px; cursor: pointer;
+  transition: background .16s var(--ease);
+}
+.host-link:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* ---------- 面板 ---------- */
 .panel {
@@ -341,6 +401,13 @@ textarea { resize: vertical; min-height: 62px; line-height: 1.6; font-family: va
   .rail-label { display: none; }
   .nav-item { white-space: nowrap; padding: 6px 11px; }
   .nav-item[aria-current="true"]::before { display: none; }
+  /* 横向条：13 项平铺成一排。「其他仪器方法」的小标题去掉，只留它的三项。 */
+  .nav-group-label { display: none; }
+  .nav-sub {
+    margin-left: 0; padding: 6px 9px; border-left: none;
+    font-size: 12px; color: var(--faint);
+  }
+  .nav-sub .nav-dot { width: 6px; height: 6px; }
   .main { padding: 14px 14px 32px; }
   .chart-wrap { height: 250px; }
   .sim-title { font-size: 18px; }
@@ -486,7 +553,9 @@ textarea { resize: vertical; min-height: 62px; line-height: 1.6; font-family: va
 .process-lab { min-width: 0; --faint: #8798a5; --dim: #acbac4; }
 .process-lab, .process-lab * { letter-spacing: 0; }
 .process-lab .panel { border: 0; border-radius: 0; background: transparent; padding: 16px 0; border-top: 1px solid var(--line); }
-.process-lab .mode-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 18px; }
+/* auto-fit 而不是写死 2 列：有拓展模块的实验是 3 个标签，没拓展的仍是 2 个，
+   两种情况下每个标签都等宽铺满。 */
+.process-lab .mode-bar { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); margin-bottom: 18px; }
 .process-lab .mode-tab { align-items: center; padding: 10px; }
 .process-lab .controls { grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); }
 .process-lab .ctl-head { align-items: flex-start; }
@@ -505,6 +574,12 @@ textarea { resize: vertical; min-height: 62px; line-height: 1.6; font-family: va
 .lab-caption { min-height: 50px; padding: 9px 0; color: var(--dim); font-size: 12px; line-height: 1.65; }
 .lab-symbols { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 12px; }
 .lab-model-note { font-size: 12px; color: var(--dim); line-height: 1.7; border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* 拓展模块：参数型模拟器就地运行，用的是它自己在参数型页面下的那套排版 */
+.ext-note { margin: 0 0 6px; color: var(--dim); font-size: 12.5px; line-height: 1.75; }
+.ext-body { min-width: 0; }
+.ext-body .sim-head, .ext-body .task { display: none; }   /* 嵌套时不再重复标题与任务条 */
+.ext-body .chart-wrap { height: 300px; }
 .process-lab .eq-line, .process-lab .calc-line { overflow-wrap: anywhere; white-space: pre-line; }
 .lab-table-wrap { overflow-x: auto; }
 .lab-table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }

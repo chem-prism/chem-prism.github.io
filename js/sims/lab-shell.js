@@ -1,6 +1,19 @@
 import { h, panel, readouts } from './common.js';
 import { Scene } from '../glassware.js';
 import { ParticleField } from '../views.js';
+import { extsOf } from './groups.js';
+
+/**
+ * 本文件的能力版本号，由 app.js 读了打到控制台。
+ *
+ * 为什么要这个东西：静态站点没有构建步骤，模块是浏览器各存各的缓存
+ * （`python3 -m http.server` 不发 Cache-Control，GitHub Pages 是 max-age=600），
+ * 于是浏览器里可能**新旧模块混着跑**——app.js 是新的、lab-shell.js 是旧的，
+ * 症状是「导航是新的，但实验页少了某个标签」，而且普通刷新不解决。
+ * 2026-09-29 在 Edge 上真踩过一次。
+ * 控制台那行会写明 lab-shell 的版本；对不上就是缓存，硬刷新即可。
+ */
+export const SHELL_BUILD = '2026-09-29b';
 
 export function normalizeControls(controls, values, defaults) {
   const out = {};
@@ -24,8 +37,14 @@ export function normalizeControls(controls, values, defaults) {
 export function mountLab(root, params, spec) {
   root.classList.add('process-lab');
   const boundedStep = n => Math.min(spec.steps.length - 1, Math.max(0, Number.isFinite(+n) ? Math.floor(+n) : 0));
+  // 本实验挂哪些参数型模拟器作「拓展模块」，由分组表给出（顺序即显示顺序）
+  const exts = extsOf(spec.id);
+  const boundedExt = id => (exts.includes(id) ? id : (exts[0] || ''));
   const state = {
-    mode: params.mode === 'practice' ? 'practice' : 'guide',
+    // mode=ext 只在本实验确实有拓展模块时才认；否则回落，避免 URL 手改出一个空页面
+    mode: params.mode === 'ext' && exts.length ? 'ext'
+      : params.mode === 'practice' ? 'practice' : 'guide',
+    ext: boundedExt(params.ext),
     step: boundedStep(params.step),
     review: boundedStep(params.review ?? spec.steps.length - 1),
     run: String(params.run) === '1',
@@ -46,6 +65,7 @@ export function mountLab(root, params, spec) {
   const readHost = h('div');
   const reviewHost = h('div');
   const extraHost = h('div');
+  const extHost = h('div');
   const layout = h('div', { class: 'lab-representations' },
     h('section', { class: 'lab-macro' },
       h('div', { class: 'panel-label' }, '宏观层 · 实验装置'),
@@ -55,27 +75,118 @@ export function mountLab(root, params, spec) {
       h('div', { class: 'lab-particles' }, micro.cv), microNote),
     h('section', { class: 'lab-symbols' },
       h('div', { class: 'panel-label' }, '符号层 · 反应与衡算'), signHost));
+  const readPanel = panel('本步读数', readHost);
+  const modelNoteEl = h('p', { class: 'lab-model-note' }, spec.modelNote);
+  // 拓展模式下要让位的实验区（本步读数面板与模型说明也在内）
+  const labOnly = [controlsHost, stepHost, layout, extraHost, readPanel, reviewHost, modelNoteEl];
   root.append(modeHost, controlsHost, stepHost, layout,
-    extraHost, panel('本步读数', readHost), reviewHost,
-    h('p', { class: 'lab-model-note' }, spec.modelNote));
+    extraHost, readPanel, reviewHost, extHost, modelNoteEl);
 
   const activeOps = () => state.mode === 'guide' ? spec.guide : state.ops;
   const activeStep = () => state.mode === 'guide' ? state.step : state.review;
+  // 首帧不过渡：初值设成当前该画的那一步
+  let lastStep = (state.mode === 'practice' && !state.run) ? -1 : activeStep();
   const notify = () => root.dispatchEvent(new CustomEvent('sim-state-change', { bubbles: true }));
   function update() {
     rebuild();
     notify();
   }
   function buildModes() {
-    const tabs = [['guide', '教学模式'], ['practice', '练习模式']].map(([id, text]) =>
+    const defs = [['guide', '教学模式'], ['practice', '练习模式']];
+    if (exts.length) defs.push(['ext', '拓展模块']);
+    const tabs = defs.map(([id, text]) =>
       h('button', {
         class: 'mode-tab' + (state.mode === id ? ' on' : ''),
         'aria-pressed': String(state.mode === id),
-        onclick: () => { if (state.mode !== id) { state.mode = id; update(); } },
+        onclick: () => { if (state.mode !== id) { switchMode(id); } },
       }, h('b', {}, text)));
     modeHost.replaceChildren(h('div', {
       class: 'mode-bar', role: 'group', 'aria-label': '实验模式',
     }, ...tabs));
+  }
+
+  /* ---------- 拓展模块（参数型模拟器就地运行） ----------
+   * 每个课程实验挂 2–4 个参数型模拟器作原理底座，学生不必离开实验页。
+   * 三条注意：
+   *   ① 一次只挂一个：每个模拟器都自带 rAF 循环，同时跑两个画面会互相抢帧。
+   *   ② id 只认分组表白名单 —— ?ext= 是 URL 参数，不能直接拼进 import 路径。
+   *   ③ 模块按需 import('./<id>.js')，浏览器会命中 app.js 已加载的那份，不会重复下载。
+   */
+  let extMods = null;         // Map<id, module>，首次进入拓展模式时一次性载入
+  let extLoading = false;
+  let extInstance = null;     // 当前挂在页内的拓展模拟器实例
+  const EXT_STORE = 'cp:ext:';   // 拓展模块自己的滑块值，按 cp: 前缀另存，不污染实验的 URL 参数
+
+  function unmountExt() {
+    if (!extInstance) return;
+    // stop 是标准出口，destroy 只有部分视图组件有；两个都试，别让异常打断切换
+    try { extInstance.stop?.(); } catch { /* 忽略 */ }
+    try { extInstance.destroy?.(); } catch { /* 忽略 */ }
+    extInstance = null;
+  }
+  function saveExtOpts() {
+    if (!extInstance || !extInstance.params) return;
+    try {
+      localStorage.setItem(EXT_STORE + spec.id + ':' + state.ext, JSON.stringify(extInstance.params()));
+    } catch { /* 隐私模式等，忽略 */ }
+  }
+  function readExtOpts(id) {
+    try { return JSON.parse(localStorage.getItem(EXT_STORE + spec.id + ':' + id) || '{}') || {}; } catch { return {}; }
+  }
+  function loadExtMods() {
+    if (extMods || extLoading) return;
+    extLoading = true;
+    Promise.all(exts.map(async id => [id, await import(`./${id}.js`)]))
+      // refresh 之后再 notify：app.js 的「实验记录」是在挂载时取一次，
+      // 异步载入这条路上若不发事件，记录区会一直停在「拓展模块载入中」。
+      .then(pairs => { extMods = new Map(pairs); extLoading = false; refresh(); notify(); })
+      .catch(err => {
+        extLoading = false;
+        console.error('拓展模块载入失败：', err);
+        extHost.replaceChildren(h('div', { class: 'idle-note' }, '拓展模块载入失败，请刷新页面重试。'));
+      });
+  }
+
+  function buildExt() {
+    if (!extMods) { loadExtMods(); return; }
+    const mod = extMods.get(state.ext);
+    // 切换模块前先把上一个的滑块值收好
+    const tabs = h('div', { class: 'mode-bar', role: 'group', 'aria-label': '拓展模块' },
+      ...exts.map(id => h('button', {
+        class: 'mode-tab' + (id === state.ext ? ' on' : ''),
+        'aria-pressed': String(id === state.ext),
+        onclick: () => {
+          if (id === state.ext) return;
+          saveExtOpts();
+          state.ext = id;
+          update();
+        },
+      }, h('b', {}, extMods.get(id)?.meta?.name || id))));
+    const body = h('div', { class: 'ext-body' });
+    extHost.replaceChildren(panel('拓展模块',
+      tabs,
+      h('p', { class: 'ext-note' }, mod?.meta?.desc || ''),
+      body));
+    unmountExt();
+    if (!mod) return;
+    try {
+      extInstance = mod.mount(body, readExtOpts(state.ext));
+    } catch (err) {
+      console.error('拓展模块挂载失败：', state.ext, err);
+      body.replaceChildren(h('div', { class: 'idle-note' }, '该拓展模块未能载入。'));
+    }
+  }
+
+  /** 切换模式：离开实验区时停掉它自己的动画，回来时再启动，别让两套 rAF 同时跑。 */
+  function switchMode(id) {
+    const wasExt = state.mode === 'ext';
+    state.mode = id;
+    if (id === 'ext') { macro.stop(); micro.stop(); }
+    else if (wasExt) { macro.start(); micro.start(); }
+    // 模式切换会让「当前是哪一步」整个换掉，但那不是「走进下一步」，
+    // 做交叉淡入只会让人以为动画错乱。把基准对齐后刷新即可。
+    lastStep = (state.mode === 'practice' && !state.run) ? -1 : activeStep();
+    update();
   }
   function buildControls() {
     controlsHost.replaceChildren();
@@ -140,11 +251,24 @@ export function mountLab(root, params, spec) {
   }
   function refresh() {
     if (destroyed) return;
+    // 拓展模式：实验区整块让位给参数型模拟器，本实验的读数与衡算不参与
+    const inExt = state.mode === 'ext';
+    labOnly.forEach(el => { el.hidden = inExt; });
+    extHost.hidden = !inExt;
+    if (inExt) { buildExt(); return; }
+    unmountExt();
     currentResult = spec.model(activeOps());
     const r = currentResult, i = activeStep(), step = spec.steps[i];
     const idle = state.mode === 'practice' && !state.run;
     buildSteps();
-    macro.set((ctx, w, height, t) => spec.draw(ctx, w, height, t, idle ? -1 : i, r, activeOps()));
+    /* 只有**步号真的变了**才做交叉淡入并重置本步时间轴。
+       refresh() 在每次拖滑块时都会被调用（见 buildControls 的 oninput），
+       无条件过渡会把拖滑块变成频闪；无条件重置 ts 会让入场动画反复从头开始。 */
+    const stepIdx = idle ? -1 : i;
+    const stepChanged = stepIdx !== lastStep;
+    lastStep = stepIdx;
+    macro.set((ctx, w, height, t, ts) => spec.draw(ctx, w, height, t, stepIdx, r, activeOps(), ts),
+      { transition: stepChanged, resetClock: stepChanged });
     macro.cv.setAttribute('aria-label', idle ? '尚未运行' : `${step.name}：${step.op}`);
     const species = idle ? { title: '尚未反应', items: [], note: '' } : spec.species(i, r, activeOps());
     microTitle.textContent = species.title;
@@ -171,10 +295,25 @@ export function mountLab(root, params, spec) {
   rebuild();
   macro.start();
   return {
-    stop() { destroyed = true; macro.destroy(); micro.destroy(); spec.cleanup?.(); },
-    params() { return { mode: state.mode, step: state.step, review: state.review,
-      run: state.run ? '1' : '0', ...state.ops }; },
+    stop() {
+      destroyed = true;
+      unmountExt();
+      macro.destroy(); micro.destroy(); spec.cleanup?.();
+    },
+    params() {
+      // 学生每动一次滑块 app.js 都会调这里存档，顺手把拓展模块的值也收进 localStorage
+      saveExtOpts();
+      return { mode: state.mode, step: state.step, review: state.review,
+        run: state.run ? '1' : '0',
+        ...(exts.length ? { ext: state.ext } : {}),
+        ...state.ops };
+    },
     record() {
+      // 拓展模式下，实验记录给的应当是学生当下正在看的那个模拟器的数据
+      if (state.mode === 'ext') {
+        if (extInstance && extInstance.record) return extInstance.record();
+        return { sim: `${spec.name} · 拓展模块`, params: ['拓展模块载入中'], readings: [] };
+      }
       const idle = state.mode === 'practice' && !state.run;
       return {
         sim: spec.name,

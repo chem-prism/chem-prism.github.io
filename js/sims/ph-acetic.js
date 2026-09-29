@@ -8,7 +8,7 @@
  * pH 计读数偏差（斜率、未校准、测量顺序、电极护理）与实测偏差向量
  * 是**教学标定模型**，在本文件 model() 中逐项标注。
  */
-import { h } from './common.js';
+import { h, noteAt, pourStream } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   naohStandardization, hacTotalConcentration, weakAcidEquilibrium, dilutionSeries,
@@ -206,15 +206,6 @@ function flaskLabel(ctx, box, text, color) {
   ctx.restore();
 }
 
-function note(ctx, x, y, text, color = 'rgba(160,180,196,0.9)') {
-  ctx.save();
-  ctx.font = '600 11px "PingFang SC", sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
 
 function draw(ctx, W, H, t, i, r, ops) {
   const B = drawBench(ctx, W, H);
@@ -230,14 +221,14 @@ function draw(ctx, W, H, t, i, r, ops) {
     cylinder(ctx, { x: cx - 96, y: B - 150, w: 54, h: 150 }, { liquid: [222, 232, 240, 0.25], level: 0.16 });
     reagentBottle(ctx, { x: cx + 20, y: B - 155, w: 56, h: 155 },
       { liquid: [222, 232, 240, 0.22], level: 0.72, label: ['NaOH', '≈0.1 M'] });
-    note(ctx, cx - 96, B - 168, '量取 15 mL 2 M NaOH');
+    noteAt(ctx, cx - 96, B - 168, '量取 15 mL 2 M NaOH');
     return;
   }
   if (i === 1) {
     balance(ctx, { x: cx - 150, y: B - 150, w: 110, h: 150 },
       { item: true, itemColor: [230, 230, 226, 0.85], reading: ops.mKHP.toFixed(4) });
     conicalFlask(ctx, { x: cx - 20, y: B - 140, w: 100, h: 140 }, { liquid: CLEAR, level: 0.36 });
-    note(ctx, cx + 94, B - 120, '×3 份');
+    noteAt(ctx, cx + 94, B - 120, '×3 份');
     return;
   }
   if (i === 2) {
@@ -245,17 +236,11 @@ function draw(ctx, W, H, t, i, r, ops) {
     burette(ctx, buretteBox, { level: 0.42, liquid: [200, 210, 220, 0.30] });
     const flask = { x: cx - 54, y: B - 145, w: 108, h: 145 };
     conicalFlask(ctx, flask, { liquid: PINK_END, level: 0.42 });
-    ctx.save();
-    ctx.strokeStyle = 'rgba(160,180,196,0.5)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, buretteBox.y + buretteBox.h);
-    ctx.lineTo(cx, flask.y + 8);
-    ctx.stroke();
-    ctx.restore();
+    pourStream(ctx, { x: cx, y: buretteBox.y + buretteBox.h }, { x: cx, y: flask.y + 8 },
+      { color: [160, 180, 196], alpha: 0.5, width: 3, t });
     reagentBottle(ctx, { x: cx + 66, y: B - 112, w: 36, h: 112 },
       { shape: 'drop', liquid: [214, 90, 160, 0.5], level: 0.5, label: ['酚酞'] });
-    note(ctx, 14, 40, '微红 半分钟不褪', '#d16ba5');
+    noteAt(ctx, 14, 40, '微红 半分钟不褪', '#d16ba5');
     return;
   }
   if (i === 3) {
@@ -263,7 +248,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     flaskLabel(ctx, { x: cx - 158, y: B - 132, w: 118, h: 132 }, 'HAc（200 mL）');
     pipette(ctx, { x: cx - 10, y: B - 150, w: 120, h: 26 }, { angle: -0.55 });
     conicalFlask(ctx, { x: cx + 40, y: B - 140, w: 96, h: 140 }, { liquid: CLEAR, level: 0.30 });
-    note(ctx, cx - 158, B - 152, '移液管润洗 2~3 次');
+    noteAt(ctx, cx - 158, B - 152, '移液管润洗 2~3 次');
     return;
   }
   if (i === 4) {
@@ -271,17 +256,11 @@ function draw(ctx, W, H, t, i, r, ops) {
     burette(ctx, buretteBox, { level: 0.46, liquid: [200, 210, 220, 0.30] });
     const flask = { x: cx - 54, y: B - 145, w: 108, h: 145 };
     conicalFlask(ctx, flask, { liquid: PINK_END, level: 0.42 });
-    ctx.save();
-    ctx.strokeStyle = 'rgba(160,180,196,0.5)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, buretteBox.y + buretteBox.h);
-    ctx.lineTo(cx, flask.y + 8);
-    ctx.stroke();
-    ctx.restore();
+    pourStream(ctx, { x: cx, y: buretteBox.y + buretteBox.h }, { x: cx, y: flask.y + 8 },
+      { color: [160, 180, 196], alpha: 0.5, width: 3, t });
     reagentBottle(ctx, { x: cx + 66, y: B - 112, w: 36, h: 112 },
       { shape: 'drop', liquid: [214, 90, 160, 0.5], level: 0.5, label: ['酚酞'] });
-    note(ctx, 14, 40, '三份极差 < 0.04 mL', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, 14, 40, '三份极差 < 0.04 mL', 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 5) {
@@ -294,7 +273,7 @@ function draw(ctx, W, H, t, i, r, ops) {
       volumetricFlask(ctx, bx, { liquid: CLEAR, level: 0.55 });
       flaskLabel(ctx, bx, `${r.cs[k].toFixed(5)} M`);
     });
-    note(ctx, 14, 40, '5.00 / 10.00 / 25.00 mL → 50 mL 容量瓶（原液另计）');
+    noteAt(ctx, 14, 40, '5.00 / 10.00 / 25.00 mL → 50 mL 容量瓶（原液另计）');
     return;
   }
   if (i === 6) {
@@ -304,8 +283,8 @@ function draw(ctx, W, H, t, i, r, ops) {
       { liquid: [222, 232, 240, 0.22], level: 0.6, label: ['pH 6.86'] });
     reagentBottle(ctx, { x: cx - 36, y: B - 108, w: 46, h: 108 },
       { liquid: [222, 232, 240, 0.22], level: 0.6, label: ['pH 4.00'] });
-    if (!r.slopeOk) note(ctx, 14, 40, `斜率 ${ops.slopePct.toFixed(1)}% 超出 95%~105%，校准不合格`, '#e05a4f');
-    else note(ctx, 14, 40, `两点校准：6.86 → 4.00，斜率 ${ops.slopePct.toFixed(1)}% 合格`, 'rgba(160,180,196,0.9)');
+    if (!r.slopeOk) noteAt(ctx, 14, 40, `斜率 ${ops.slopePct.toFixed(1)}% 超出 95%~105%，校准不合格`, '#e05a4f');
+    else noteAt(ctx, 14, 40, `两点校准：6.86 → 4.00，斜率 ${ops.slopePct.toFixed(1)}% 合格`, 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 7) {
@@ -313,8 +292,8 @@ function draw(ctx, W, H, t, i, r, ops) {
     phMeter(ctx, mBox, { reading: r.phMeasured[0].toFixed(2), bulbY: B - 52 });
     beaker(ctx, { x: cx - 104, y: B - 118, w: 88, h: 118 }, { liquid: CLEAR, level: 0.52 });
     flaskLabel(ctx, { x: cx - 104, y: B - 118, w: 88, h: 118 }, `${r.cs[0].toFixed(5)} M HAc（第一份）`);
-    note(ctx, 14, 40, '由稀到浓：0.01 → 0.02 → 0.05 → 0.10');
-    if (ops.electrodeCare !== 0) note(ctx, 14, 58, '电极处理不规范', '#e05a4f');
+    noteAt(ctx, 14, 40, '由稀到浓：0.01 → 0.02 → 0.05 → 0.10');
+    if (ops.electrodeCare !== 0) noteAt(ctx, 14, 58, '电极处理不规范', '#e05a4f');
     return;
   }
   // i === 8 / 9：四份样品的 pH「结果墙」
@@ -336,9 +315,9 @@ function draw(ctx, W, H, t, i, r, ops) {
     flaskLabel(ctx, bx, `${r.cs[k].toFixed(5)} M`);
   });
   if (i === 9) {
-    note(ctx, 14, 40, `Ka 均值 ${sup10(r.report.kaMean)} vs 教材 1.78×10⁻⁵（相对误差 ${r.report.relErrPct >= 0 ? '+' : ''}${r.report.relErrPct.toFixed(1)}%）`);
+    noteAt(ctx, 14, 40, `Ka 均值 ${sup10(r.report.kaMean)} vs 教材 1.78×10⁻⁵（相对误差 ${r.report.relErrPct >= 0 ? '+' : ''}${r.report.relErrPct.toFixed(1)}%）`);
   } else {
-    note(ctx, 14, 40, 'pH 即测得值（记录到 0.01）——Ka、α 由它反算');
+    noteAt(ctx, 14, 40, 'pH 即测得值（记录到 0.01）——Ka、α 由它反算');
   }
 }
 
@@ -636,3 +615,10 @@ export function mount(root, params = {}) {
     extra: (host, i, r) => addTables(host, i, r),
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

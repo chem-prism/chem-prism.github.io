@@ -16,83 +16,41 @@
 </head>
 <body>
 <div class="grid" id="g"></div>
-<script>
+<script type="module">
 const query = new URLSearchParams(location.search);
 const SIM = query.get('sim') || 'mohr-salt';
 const FROM = +(query.get('from') || 0);
-const SCENES = {
-  'mohr-salt': {
-    title: '实验四十 · 硫酸亚铁铵的制备',
-    names: ['称取铁粉','加入硫酸','加热溶解','趁热过滤','加入硫酸铵','水浴蒸发',
-            '冷却结晶','减压抽滤','乙醇洗涤','晾干','称重','目视比色'],
-    count: 12,
-  },
-  'magnesium-molar': {
-    title: '实验二十一 · 置换法测定镁的摩尔质量',
-    names: ['称量镁带','组装并查漏','加酸并固定镁带','校平并记初读数',
-            '反应放氢','冷却至室温','记录终读数','平行测定与验算'],
-    count: 8,
-  },
-  kinetics: {
-    title: '实验十五 · 反应级数、速率及活化能',
-    names: ['准备储备试剂','配制预混合液','快速启动并计时','蓝色终点',
-            '浓度系列','拟合反应级数','温度系列','求活化能'],
-    count: 8,
-  },
-  'fe2-assay': {
-    title: '实验四十之二 · 硫酸亚铁铵中 Fe²⁺ 含量',
-    names: ['配制 KMnO₄','配制草酸钠标准液','加酸加热','标定终点',
-            '配制试样','平行滴定','计算含量','复核纯度'],
-    count: 8,
-  },
-  'titration-practice': {
-    title: '实验三十一 · 滴定分析基本操作练习',
-    names: ['配制操作溶液','移液管洗涤润洗','定量取液','滴定管润洗装液',
-            '排气泡并调零','控制滴定速度','判断终点并读数','平行测定与比值'],
-    count: 8,
-  },
-  'water-hardness': {
-    title: '实验 06 · 水质分析 水硬度的测定',
-    names: ['配制 EDTA 溶液','称取并溶解基准物','煮沸除 CO₂ 并定容','标定装液（预加 EDTA）',
-            '标定滴定至终点','钙硬度：沉淀隐蔽 Mg²⁺','总硬度：加 Mg-EDTA 后滴定',
-            '计算 c(EDTA) 与两硬度','差减求镁硬度并换算 MgO','结果评价与分级'],
-    count: 10,
-  },
-  'ph-acetic': {
-    title: '实验 07 · pH 法测 HAc 电离常数',
-    names: ['配制 NaOH 溶液','称取并溶解基准物','标定滴定','移取 HAc 试样','滴定 HAc 总浓度',
-            '稀释系列','两点校准 pH 计','由稀到浓测 pH','计算 Ka 与 α','与教材值比较并讨论'],
-    count: 10,
-  },
-  'fe3-spec': {
-    title: '实验 09 · Fe³⁺ 含量测定（分光光度法）',
-    names: ['准备工作（除氧水与试剂）','配制铁标准溶液','配制标准系列','配制试样溶液','比色皿配对',
-            '吸收曲线定 λmax','显色静置 10 min','测标准系列作曲线','测试样求含量','计算 ε 与讨论'],
-    count: 10,
-  },
-  cyanotype: {
-    title: '实验 08 · 光敏剂与蓝晒古法印相',
-    names: ['溶解莫尔盐','沉淀草酸亚铁','倾析弃清液','40 ℃ 氧化','加草酸配位','趁热过滤',
-            '平均分三份','乙醇结晶','避光晾干算产率','配感光剂并涂布','紫外曝光','水洗显影晾干'],
-    count: 12,
-  },
-  'complex-chem': {
-    title: '实验 10 · 配合物的生成与性质',
-    names: ['准备与取液','CuSO₄ + 氨水逐滴与过量','内界与外界的检验','配位平衡的移动：酸与竞争配体',
-            'Fe-SCN 血红与掩蔽','AgX：溶解度与配位溶解','沉淀转化链','Cu²⁺ + KI：沉淀促氧化还原',
-            '离心机的使用','Ni²⁺ 鉴定','K⁺ 鉴定','Co-SCN 萃取显色与回收'],
-    count: 12,
-  },
-};
-const scene = SCENES[SIM] || SCENES['mohr-salt'];
-document.title = `${scene.title} · 场景构图自检`;
+// 步骤名**从各 sim 的 sceneSpec 派生**，不再手抄。
+// 手抄的代价：sim 里改个步骤名或加一步，这里会静默失真（曾经就是这样）。
+import { sceneSpec as mohrSalt } from './js/sims/mohr-salt.js';
+import { sceneSpec as magnesiumMolar } from './js/sims/magnesium-molar.js';
+import { sceneSpec as kinetics } from './js/sims/kinetics.js';
+import { sceneSpec as fe2Assay } from './js/sims/fe2-assay.js';
+import { sceneSpec as titrationPractice } from './js/sims/titration-practice.js';
+import { sceneSpec as waterHardness } from './js/sims/water-hardness.js';
+import { sceneSpec as phAcetic } from './js/sims/ph-acetic.js';
+import { sceneSpec as fe3Spec } from './js/sims/fe3-spec.js';
+import { sceneSpec as cyanotype } from './js/sims/cyanotype.js';
+import { sceneSpec as complexChem } from './js/sims/complex-chem.js';
+
+const SPECS = { 'mohr-salt': mohrSalt, 'magnesium-molar': magnesiumMolar, kinetics, 'fe2-assay': fe2Assay,
+  'titration-practice': titrationPractice, 'water-hardness': waterHardness, 'ph-acetic': phAcetic,
+  'fe3-spec': fe3Spec, cyanotype, 'complex-chem': complexChem };
+const spec = SPECS[SIM] || SPECS['mohr-salt'];
+const title = spec.name;
+const names = spec.steps.map(s => s.name);
+document.title = `${title} · 场景构图自检`;
 const g = document.getElementById('g');
-for (let i = FROM; i < Math.min(FROM + 6, scene.count); i++) {
+for (let i = FROM; i < Math.min(FROM + 6, spec.steps.length); i++) {
   const d = document.createElement('div');
   d.className = 'cell';
-  d.innerHTML = `<div class="tag">${scene.title} · ${i + 1}. ${scene.names[i]}</div>` +
-    `<iframe src="/?sim=${SIM}&mode=guide&step=${i}"></iframe>`;
+  d.innerHTML = `<div class="tag">${title} · ${i + 1}. ${names[i]}</div>` +
+    `<iframe src="/?sim=${spec.id}&mode=guide&step=${i}"></iframe>`;
   g.append(d);
+}
+if (FROM >= spec.steps.length) {
+  document.body.insertAdjacentHTML('beforeend',
+    `<p style="color:#e05a3d;padding:14px">from=${FROM} 超出范围：${spec.id} 只有 ${spec.steps.length} 步</p>`);
 }
 </script>
 </body>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>全部场景总览（构图级自检）</title>
+<style>
+  body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
+  .bar {
+    position:sticky; top:0; z-index:9; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:10px 14px; background:rgba(10,14,18,.94); border-bottom:1px solid #212b34;
+    backdrop-filter:blur(8px); font-size:13px;
+  }
+  .bar b { font-size:14px; }
+  .bar label { color:#7b8c99; }
+  .bar input { width:74px; background:#161e26; color:#dde5ec; border:1px solid #2f3d48;
+               border-radius:4px; padding:3px 6px; font:inherit; }
+  .bar a { color:#e8a33d; text-decoration:none; border-bottom:1px dotted currentColor; }
+  .stat { margin-left:auto; color:#8798a5; font-variant-numeric:tabular-nums; }
+  .stat b { color:#6bbc57; }
+  .stat .bad { color:#e05a4f; }
+  h2 { font-size:13px; font-weight:600; letter-spacing:.08em; color:#acbac4;
+       margin:22px 0 8px; padding:0 14px; }
+  h2 small { color:#4c5b67; font-weight:400; margin-left:8px; letter-spacing:0; }
+  .grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; padding:0 12px 6px; }
+  @media (max-width:1500px) { .grid { grid-template-columns:repeat(2, 1fr); } }
+  .cell { border:1px solid #212b34; border-radius:6px; overflow:hidden; background:#111a20; }
+  .cell.blank { border-color:#e05a4f; }
+  .cell canvas { display:block; width:100%; height:auto; }
+  .cap { font-size:11px; padding:3px 7px; color:#8798a5; background:#0c1116;
+         display:flex; justify-content:space-between; gap:8px; }
+  .cap b { color:#e8a33d; font-weight:600; }
+  .cap .ink { font-variant-numeric:tabular-nums; color:#4c5b67; }
+  .cell.blank .cap .ink { color:#e05a4f; }
+  .note { padding:0 14px 40px; color:#4c5b67; font-size:12px; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>全部场景总览</b>
+  <label>t = <input id="t" type="number" step="0.1" value="0.9"></label>
+  <label>ts = <input id="ts" type="number" step="0.1" value="2.0"></label>
+  <label>宽 <input id="w" type="number" step="10" value="725"></label>
+  <label>高 <input id="h" type="number" step="10" value="340"></label>
+  <span class="stat" id="stat"></span>
+</div>
+<div id="root"></div>
+
+<p class="note">
+  本页**直接调用各 sim 的 <code>spec.draw()</code>**，不经 iframe、不起 rAF、不跑动画——所以
+  同一组参数连渲两次像素必须完全一致（这是「绘制函数是纯函数、不含随机数」这条约定的人工可验版）。<br>
+  宽度 725 / 高度 340 是在 1240px 视口下 <code>.lab-canvas</code> 的真实尺寸，所以构图与真机一致。<br>
+  每格右下角的百分比是**非背景像素占比**——低于 0.5% 会标红，用来抓「某一步什么都没画出来」。<br>
+  真机 + 真实 CSS / 窄屏断点请用 <code>_scenes-test.html</code>；逐件器皿请用 <code>_glassware-test.html</code>。
+</p>
+
+<script type="module">
+import { sceneSpec as mohrSalt }        from './js/sims/mohr-salt.js';
+import { sceneSpec as magnesiumMolar }  from './js/sims/magnesium-molar.js';
+import { sceneSpec as kinetics }        from './js/sims/kinetics.js';
+import { sceneSpec as fe2Assay }        from './js/sims/fe2-assay.js';
+import { sceneSpec as titrationPractice} from './js/sims/titration-practice.js';
+import { sceneSpec as waterHardness }   from './js/sims/water-hardness.js';
+import { sceneSpec as phAcetic }        from './js/sims/ph-acetic.js';
+import { sceneSpec as fe3Spec }         from './js/sims/fe3-spec.js';
+import { sceneSpec as cyanotype }       from './js/sims/cyanotype.js';
+import { sceneSpec as complexChem }     from './js/sims/complex-chem.js';
+
+// 顺序 = 左栏顺序
+const SPECS = [mohrSalt, magnesiumMolar, kinetics, fe2Assay, titrationPractice,
+  waterHardness, phAcetic, fe3Spec, cyanotype, complexChem];
+
+const q = new URLSearchParams(location.search);
+const only = q.get('sim');
+
+/*
+ * 故意坏样本开关 —— 供 `_check/run.mjs --selfcheck` 验证检查器本身有效。
+ * 本仓库在这件事上栽过四次（CLAUDE.md 坑 9/10/12/14）：不先证明检查器抓得到错，
+ * 它报「全过」就毫无意义。
+ *   ?boom=N   第 N 格（1 起）绘制时抛错
+ *   ?blank=N  第 N 格（1 起）什么都不画
+ */
+const BOOM = +(q.get('boom') || 0);
+const BLANK = +(q.get('blank') || 0);
+
+const elT = document.getElementById('t');
+const elTs = document.getElementById('ts');
+const elW = document.getElementById('w');
+const elH = document.getElementById('h');
+for (const [el, key, dflt] of [[elT, 't', 0.9], [elTs, 'ts', 2.0], [elW, 'w', 725], [elH, 'h', 340]]) {
+  if (q.has(key)) el.value = q.get(key);
+  el.addEventListener('change', render);
+}
+
+// 画布底色（与 .lab-canvas 一致）。非空判定要排除它。
+const BG = [17, 26, 32];
+
+window.__sim = only || 'mohr-salt';
+const root = document.getElementById('root');
+const stat = document.getElementById('stat');
+
+function render() {
+  const T = +elT.value || 0;
+  const TS = +elTs.value || 0;
+  const W = Math.max(120, +elW.value || 725);
+  const H = Math.max(80, +elH.value || 340);
+  root.replaceChildren();
+
+  let total = 0, blank = [];
+  const drawErrors = [];
+  for (const spec of SPECS) {
+    if (only && spec.id !== only) continue;
+    const r = spec.model(spec.guide);
+    const h2 = document.createElement('h2');
+    h2.innerHTML = `${spec.name}<small>${spec.id} · ${spec.steps.length} 步</small>`;
+    root.append(h2);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    spec.steps.forEach((step, i) => {
+      // 离屏画布：先把场景画好、量出非空占比，再决定这一格要不要标红
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = `rgb(${BG.join(',')})`;
+      ctx.fillRect(0, 0, W, H);
+      total++;                       // 先自增，让「第几格」在下面就能用
+      let drew = true;
+      // 用 try/catch 是为了「一格坏掉不拖垮其余 97 格」；但**不能把错误吞掉**——
+      // 只表现为一个空白格的话，「画到一半抛错、却仍留下 >0.5% 像素」的场景会被静默放过。
+      // 所以这里记下来，循环结束后以未捕获异常抛出，与真机里 rAF 回调抛错的表现一致。
+      try {
+        if (BOOM === total) throw new Error('【故障注入】故意抛错');
+        // 第 8 参 ts = 「本步已进行秒数」，驱动入场/一次性动画。
+        // 默认给 2.0（已进场完毕）——否则过滤类场景会永远停在动画起点
+        // （例如 magnesium-molar 第 4 步的「漏斗还没升上来」）。
+        if (BLANK !== total) spec.draw(ctx, W, H, T, i, r, spec.guide, TS);
+      } catch (e) {
+        drew = false;
+        drawErrors.push(`${spec.id} 第 ${i + 1} 步（${step.name}）：${e.message}`);
+      }
+
+      // 非背景像素占比：每 7 个像素抽 1 个，按颜色与底色差异判定
+      const d = ctx.getImageData(0, 0, W, H).data;
+      let ink = 0, seen = 0;
+      for (let p = 0; p < d.length; p += 4 * 7) {
+        seen++;
+        if (Math.abs(d[p] - BG[0]) + Math.abs(d[p + 1] - BG[1]) + Math.abs(d[p + 2] - BG[2]) > 12) ink++;
+      }
+      const ratio = seen ? ink / seen : 0;
+      const isBlank = !drew || ratio < 0.005;
+      if (isBlank) blank.push(`${spec.id}#${i + 1}`);
+
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (isBlank ? ' blank' : '');
+      // 基线用它做键。**必须带 sim id**——只靠「序号+步骤名」的话，
+      // 两个实验里同号的同名步骤会撞在一起，撞了就会互相掩盖改动（踩过一次：98 格只剩 97 条）。
+      cell.dataset.key = `${spec.id}#${i + 1}`;
+      cell.append(cv);
+      const cap = document.createElement('div');
+      cap.className = 'cap';
+      cap.innerHTML = `<span><b>${i + 1}</b> ${step.name}</span>`
+        + `<span class="ink">${(ratio * 100).toFixed(1)}%</span>`;
+      cell.append(cap);
+      grid.append(cell);
+    });
+    root.append(grid);
+  }
+
+  stat.innerHTML = `共 <b>${total}</b> 格`
+    + (blank.length ? `　空白 <span class="bad">${blank.length}</span>：${blank.join('、')}`
+                    : '　<span style="color:#6bbc57">无空白格</span>');
+  console.log(`_scenes-all：渲染 ${total} 格，空白 ${blank.length} 个`, blank);
+
+  // 渲染循环走完再抛，好让其余格子都画完；异步抛才会成为 uncaught error（即 pageerror）
+  if (drawErrors.length) {
+    setTimeout(() => {
+      throw new Error(`场景绘制抛错 ${drawErrors.length} 处：\n` + drawErrors.join('\n'));
+    }, 0);
+  }
+}
+
+render();
+</script>
+</body>
+</html>

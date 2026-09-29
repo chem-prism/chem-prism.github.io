@@ -6,15 +6,19 @@
  */
 import { Chart } from '../chart.js';
 import { mohrPrep, solubilityAt, thiocyanateColor, FE3_GRADES } from '../chem.js';
-import { h } from './common.js';
+import { h, pourStream } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   balance, conicalFlask, cylinder, funnel, hotplate, waterBath,
   evapDish, buchner, suctionFlask, watchGlass, comparisonTube,
-  stirringRod, bubbles, crystals, steam,
+  stirringRod, bubbles, crystals, steam, powderPile,
   ferrousSolutionColor, MOHR_CRYSTAL_COLOR, IRON_POWDER_COLOR, CLEAR_COLOR,
   drawBench,
 } from '../glassware.js';
+
+// 稀硫酸近无色。原来给到 0.42，倾斜时一整块高亮色块贴在管里，
+// 读起来像一片脱落的板——降到 0.24，够看出液面和液流，又不会盖住玻璃。
+const ACID = [226, 234, 242, 0.24];
 
 export const meta = {
   id: 'mohr-salt',
@@ -172,11 +176,21 @@ function draw(ctx, W, H, t, i, r, ops) {
     return;
   }
   if (i === 1) {
+    /* 课件第 8 页：锥形瓶里先盛 2 g 纯铁粉，再加 15 mL 3 mol·L⁻¹ H₂SO₄ 并轻摇。
+       所以这一步瓶里是「铁粉 + 正在加入的酸」，不是一上来就有半瓶溶液。 */
     const flask = { x: cx - 55, y: B - H * 0.48, w: 110, h: H * 0.48 };
-    conicalFlask(ctx, flask, { liquid: CLEAR_COLOR, level: 0.15 });
-    cylinder(ctx, { x: cx - 145, y: H * 0.18, w: 42, h: H * 0.34 }, { liquid: CLEAR_COLOR, level: 0.55, tilt: 1.42 });
-    ctx.strokeStyle = 'rgba(222,232,240,0.5)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(cx - 115, H * 0.38); ctx.quadraticCurveTo(cx - 70, H * 0.44, cx - 8, flask.y + 8); ctx.stroke();
+    const f = conicalFlask(ctx, flask, { level: 0 });
+    powderPile(ctx, { x: flask.x + 24, y: B - 15, w: flask.w - 48, h: 13 }, 0.55);
+
+    /* 量筒倾角必须**超过 90°**，壶嘴才低于筒心、液才倒得出来。
+       原值 1.42 rad（81.4°）壶嘴比筒心还高 0.15h，液体往筒底聚——倒不出去，
+       而且筒身几乎躺平，画出来像一块斜板。2.01 rad ≈ 115° 是正常倾倒姿势。 */
+    // 细长筒身（30×109）：量筒本来就是细长的，粗筒一倾斜看着就是一坨
+    const cz = cylinder(ctx, { x: cx - 95, y: H * 0.04, w: 30, h: H * 0.32 },
+      { liquid: ACID, level: 0.50, tilt: 2.30 });
+
+    // 液流从**壶嘴锚点**出发落到瓶口。起点不再手写——手写必然对不上（原来差了 48 px）
+    pourStream(ctx, cz.spout, { x: f.mouth.x - 2, y: f.mouth.y + 9 }, { color: [222, 232, 240], t, width: 3.2 });
     return;
   }
   if (i === 2) {
@@ -232,7 +246,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     buchner(ctx, { x: cx - 66, y: flask.y - bh + 6, w: 132, h: bh }, {
       liquid: i === 8 ? [214, 226, 238, 0.16] : solution,
       level: i === 8 ? 0.25 : 0.45, cake: Math.min(1, r.crystallized / 12),
-      cakeColor: MOHR_CRYSTAL_COLOR, dropColor: solution, dripping: true,
+      cakeColor: MOHR_CRYSTAL_COLOR, dropColor: solution, dripping: true, t,
     });
     return;
   }
@@ -295,10 +309,20 @@ function addSolubilityChart(host, ops) {
   chart.draw();
 }
 
+/** 全流程物料衡算。提到模块级是为了让 sceneSpec 与 mount 引用同一个函数，不会漂移。 */
+const model = ops => mohrPrep(ops);
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };
+
 export function mount(root, params = {}) {
   return mountLab(root, params, {
     id: meta.id, name: meta.name, steps: STEPS, controls: CONTROLS,
-    defaults: DEFAULTS, guide: GUIDE, model: ops => mohrPrep(ops),
+    defaults: DEFAULTS, guide: GUIDE, model,
     draw, species, observation, verdict,
     equation: 'Fe + H₂SO₄ → FeSO₄ + H₂↑ ｜ FeSO₄+(NH₄)₂SO₄+6H₂O→莫尔盐',
     calculation: (i, r) => i >= 10

@@ -170,12 +170,31 @@ export function vessel(ctx, pathFn, box, o = {}) {
   ctx.stroke();
   ctx.restore();
 
-  // 玻璃左壁渐变高光：screen 合成模式叠一道竖向白色渐变，模拟玻璃左侧的透光
-  if (liquid && level > 0.002 && !o.noGlassSheen) {
+  /*
+   * 玻璃左壁渐变高光：screen 合成叠一道竖向白色渐变，模拟玻璃左侧的透光。
+   *
+   * ⚠️ 这一笔**不能挂在液位上**（`liquid && level > 0.002`），曾经就是这么写的，后果实测如下
+   * （`_glassware-test.html` 的「液位扫描」行，取样 y 在液面之上）：
+   *     液位 0     → 管腔 = 背景色 (17,26,32)，一个像素没画
+   *     液位 0.02  → 左半侧抬到 (36,44,50)，向右衰减
+   *     液位 0.5   → 液面之上**与 0.02 逐位相同**
+   * 也就是说：有没有液体，会让整个管腔在「纯背景」和「横跨约 60% 管宽的一层柔和亮带」
+   * 之间硬跳。眼睛把后者读成「这管子装了东西」——于是空试管看着像盛了黑色液体。
+   *
+   * 两条修法：
+   *   ① **与液位解耦**：空的玻璃也有壁反光，两者连续，不再是一次跳变。
+   *   ② **收窄**：0.14→0.34 而不是 0→0.32。宽渐晕像「填充」，窄带才像「玻璃壁反光」。
+   *
+   * 注意**不加内腔底色**：平铺一层底色同样会被读成「填充」，方向是反的。
+   * 空玻璃之所以像空玻璃，正是因为背景能透过来。
+   */
+  if (!o.noGlassSheen) {
     const sheenGrad = ctx.createLinearGradient(box.x, 0, box.x + box.w, 0);
     sheenGrad.addColorStop(0,    'rgba(255,255,255,0)');
-    sheenGrad.addColorStop(0.18, 'rgba(255,255,255,0.13)');
-    sheenGrad.addColorStop(0.32, 'rgba(255,255,255,0.04)');
+    sheenGrad.addColorStop(0.13, 'rgba(255,255,255,0)');
+    sheenGrad.addColorStop(0.24, 'rgba(255,255,255,0.16)');
+    sheenGrad.addColorStop(0.35, 'rgba(255,255,255,0.02)');
+    sheenGrad.addColorStop(0.52, 'rgba(255,255,255,0)');
     sheenGrad.addColorStop(1,    'rgba(255,255,255,0)');
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
@@ -279,6 +298,9 @@ export function conicalFlask(ctx, box, o = {}) {
   ctx.lineTo(nx + neckW + 2.5, y);
   ctx.stroke();
   ctx.restore();
+
+  // 与 beaker 同一形状：倾倒的落点用 mouth，液流才不会落在瓶颈外面
+  return { box, mouth: { x: x + w / 2, y }, bottom: { x: x + w / 2, y: y + h } };
 }
 
 /** Beaker and attachment coordinates share the same fitted geometry. */
@@ -312,6 +334,7 @@ export function gasMeasuringTube(ctx, box, o = {}) {
     c.closePath();
   };
   vessel(ctx, path, box, o);
+  if (o.rim !== false) rimEllipse(ctx, x + w / 2, y, w / 2, o);
   graduations(ctx, { x, y: y + 10, w, h: h - 20 }, 10, { side: 'right', len: Math.min(14, w * 0.55) });
   ctx.save();
   ctx.font = '10px ui-monospace, Menlo, monospace';
@@ -428,6 +451,23 @@ export function pipette(ctx, box, o = {}) {
   ctx.restore();
 }
 
+/**
+ * 平口器皿的管口椭圆。
+ *
+ * 平口的管子（试管、量气管、比色管）如果只画一条横线封口，看上去是「一根实心柱子」；
+ * 补一小段椭圆，才读得出「这是个开口的空腔」。宽度取管宽的一半、高度压到 0.15 左右，
+ * 就是俯视一点的透视感——比值再大就变成一个盘子了。
+ */
+function rimEllipse(ctx, cx, cy, rx, o = {}) {
+  ctx.save();
+  ctx.strokeStyle = o.stroke || GLASS.stroke;
+  ctx.lineWidth = Math.max(1, GLASS.lw * 0.85);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, Math.max(2, rx * 0.30), 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function testTube(ctx, box, o = {}) {
   const { x, y, w, h } = box;
   const r = w / 2;
@@ -439,6 +479,7 @@ export function testTube(ctx, box, o = {}) {
     c.closePath();
   };
   vessel(ctx, path, box, o);
+  if (o.rim !== false) rimEllipse(ctx, x + w / 2, y, r, o);
 }
 
 export function stirPlate(ctx, box, o = {}) {
@@ -481,6 +522,19 @@ export function stopwatch(ctx, box, o = {}) {
   ctx.restore();
 }
 
+/**
+ * 铁架台：底座 + 立杆 + 可选铁夹。
+ *
+ * **回传夹持锚点**，调用方据此摆放被夹的器皿——铁圈和被夹物各算各的坐标，
+ * 一定会对不齐（`magnesium-molar` 就是这么错的：铁圈空悬在试管口上方 35 px，
+ * 试管自己站在台面上）。用法：
+ *
+ *   const st = retortStand(ctx, {…}, { clamp: { y: …, radius: 26 } });
+ *   // 把试管摆到「管身正好落在圈里」
+ *   testTube(ctx, { x: st.clamp.x - w / 2, y: st.clamp.y - 40, w, h });
+ *
+ * @returns { pole, clamp? } —— clamp 为 {x, y, radius}（圈心与半径，世界坐标）
+ */
 export function retortStand(ctx, { x, y, w, h }, o = {}) {
   ctx.save();
   ctx.strokeStyle = o.stroke || GLASS.stroke;
@@ -493,16 +547,27 @@ export function retortStand(ctx, { x, y, w, h }, o = {}) {
   ctx.moveTo(pole, y + h - 10);
   ctx.lineTo(pole, y);
   ctx.stroke();
-  if (o.clamp) {
+  // 一个铁架台往往要夹两件器皿（如置换法：反应管 + 量气筒），
+  // 所以 clamp 既接受单个对象，也接受数组。
+  const wants = o.clamp ? (Array.isArray(o.clamp) ? o.clamp : [o.clamp]) : [];
+  const clamps = wants.map(spec => {
+    const radius = spec.radius || 30;
+    const cx = spec.x != null ? spec.x : pole + radius + 12;
+    const cy = spec.y;
+    // 横臂到**圈的左缘**为止。画到圈心的话，臂会从器皿中间穿过去——
+    // 玻璃是透明的，臂就明晃晃地横在管子里（踩过）
     ctx.beginPath();
-    ctx.moveTo(pole, o.clamp.y);
-    ctx.lineTo(o.clamp.x, o.clamp.y);
+    ctx.moveTo(pole, cy);
+    ctx.lineTo(cx - radius * 0.9, cy);
     ctx.stroke();
     ctx.beginPath();
-    ctx.ellipse(o.clamp.x, o.clamp.y, o.clamp.radius || 30, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, radius, Math.max(4, radius * 0.17), 0, 0, Math.PI * 2);
     ctx.stroke();
-  }
+    return { x: cx, y: cy, radius };
+  });
   ctx.restore();
+  // clamp 保留单数形式（老调用方在用），新增 clamps 数组
+  return { pole, clamp: clamps[0] || null, clamps };
 }
 
 export function tubing(ctx, points, o = {}) {
@@ -523,18 +588,55 @@ export function tubing(ctx, points, o = {}) {
  * 两个曾经的错处：管口做成左右对称的 V 形缺口（那是漏斗不是量筒，
  * 量筒只有**单侧**壶嘴），底座画成比管身还宽的椭圆，看着像脱离的圆盘。
  */
+/**
+ * 壶嘴在**未旋转**坐标系里的位置。
+ *
+ * ⚠️ 想倾倒必须让 `tilt > π/2`（≈1.571 rad）：只有转过 90°，壶嘴才低于筒心，
+ * 液体才会往外流。实测 81.4°（1.42 rad）时壶嘴比筒心还高 0.15h——
+ * 液体全聚到筒底端，一点也倒不出来，而筒身几乎躺平，画出来像一块斜板。
+ */
+function cylinderAnchors(box) {
+  const { x, y, w, h } = box;
+  const spout = Math.min(9, w * 0.55);
+  const rimY = y + 7;
+  return {
+    mouth: { x: x + w / 2, y: rimY },
+    spout: { x: x + spout * 0.5, y: rimY - spout * 0.85 },   // 壶嘴尖端
+    bottom: { x: x + w / 2, y: y + h },
+  };
+}
+
+/**
+ * 量筒。返回锚点 `{ box, tilt, mouth, spout, bottom }`（世界坐标）——
+ * 倾倒的液流必须从 `spout` 出发，手写起点必然对不上。
+ *
+ * ⚠️ 锚点计算**不能**靠在旋转坐标系里调一次 `cylinderBody` 去取返回值：
+ * 那样会把它**再画一遍**（同一个器皿画两次，边缘发虚）。踩过。
+ */
 export function cylinder(ctx, box, o = {}) {
   const tilt = o.tilt || 0;
-  if (!tilt) return cylinderBody(ctx, box, o);
+  const a = cylinderAnchors(box);
+  if (!tilt) {
+    cylinderBody(ctx, box, o, 0);
+    return { box, tilt: 0, ...a };
+  }
   // 绕**几何中心**旋转。液面仍按世界水平填充，见 vessel 的 tilt 说明。
   ctx.save();
   ctx.translate(box.x + box.w / 2, box.y + box.h / 2);
   ctx.rotate(tilt);
-  cylinderBody(ctx, { x: -box.w / 2, y: -box.h / 2, w: box.w, h: box.h }, o);
+  cylinderBody(ctx, { x: -box.w / 2, y: -box.h / 2, w: box.w, h: box.h }, o, tilt);
   ctx.restore();
+  // 同一个旋转，把锚点换算回世界坐标
+  const c = Math.cos(tilt), s = Math.sin(tilt);
+  const ox = box.x + box.w / 2, oy = box.y + box.h / 2;
+  const w2 = p => {
+    const dx = p.x - ox, dy = p.y - oy;
+    return { x: ox + dx * c - dy * s, y: oy + dx * s + dy * c };
+  };
+  return { box, tilt, mouth: w2(a.mouth), spout: w2(a.spout), bottom: w2(a.bottom) };
 }
 
-function cylinderBody(ctx, box, o = {}) {
+function cylinderBody(ctx, box, o = {}, tilt = 0) {
   const { x, y, w, h } = box;
   const spout = Math.min(9, w * 0.55);
   const rimY = y + 7;
@@ -551,7 +653,7 @@ function cylinderBody(ctx, box, o = {}) {
     c.lineTo(x + w - 5, tubeBottom);
     c.quadraticCurveTo(x + w, tubeBottom, x + w, tubeBottom - 5);
   };
-  vessel(ctx, path, { ...box, h: h - footH }, { ...o, tilt: o.tilt || 0 });
+  vessel(ctx, path, { ...box, h: h - footH }, { ...o, tilt });
 
   graduations(ctx, { x, y: rimY + 10, w, h: tubeBottom - rimY - 16 }, 6,
     { side: 'left', len: Math.min(13, w * 0.45) });
@@ -722,66 +824,113 @@ export function waterBath(ctx, box, o = {}) {
  * 结构：上段是直筒（放滤纸和多孔瓷板），下段收成锥形，再接一段细管。
  * 抽滤时滤饼就堆在瓷板上。
  */
+/**
+ * 布氏漏斗。
+ *
+ * ⚠️ 形状是**浅碗锥 + 短颈**，不是直筒。
+ * 曾经写成「直筒段占 40% 高、上下等宽」，于是画出来是一个巨大的梯形盒子，
+ * 碗里还盛着一整块**矩形**液体——一眼就不像布氏漏斗（图见 `_scenes-all.html` 的
+ * mohr-salt 第 8/9 步）。现在碗壁是收口的锥，液体裁在锥里，液面自然上宽下窄。
+ *
+ * @param o.cake  滤饼厚度 0~1（堆在瓷板上，宽度随瓷板、不是满碗宽）
+ * @param o.dripping 是否正在滴液
+ */
 export function buchner(ctx, box, o = {}) {
   const { x, y, w, h } = box;
-  const cylH = h * 0.40;                 // 直筒段
-  const taperH = h * 0.34;               // 收口段
-  const plateY = y + cylH;
-  const stemW = Math.max(6, w * 0.16);
+  const bowlH = h * 0.54;                       // 碗（锥）占大头
+  const plateW = Math.max(10, w * 0.22);        // 瓷板宽度
+  const plateY = y + bowlH;
   const cx = x + w / 2;
+  const px0 = cx - plateW / 2, px1 = cx + plateW / 2;
+  const stemW = Math.max(6, w * 0.14);
   const sx = cx - stemW / 2;
+  const neckY = plateY + h * 0.10;              // 颈部（瓷板到细管之间）
 
-  const outline = c => {
+  const bowlPath = c => {
     c.moveTo(x, y);
-    c.lineTo(x, plateY);
-    c.lineTo(sx, plateY + taperH);
-    c.lineTo(sx, y + h);
-    c.lineTo(sx + stemW, y + h);
-    c.lineTo(sx + stemW, plateY + taperH);
-    c.lineTo(x + w, plateY);
-    c.lineTo(x + w, y);
-  };
-
-  // 液体只可能在上面的直筒里
-  vessel(ctx, c => {
-    c.moveTo(x, y);
-    c.lineTo(x, plateY);
-    c.lineTo(x + w, plateY);
+    c.lineTo(px0, plateY);
+    c.lineTo(px1, plateY);
     c.lineTo(x + w, y);
     c.closePath();
-  }, { x, y, w, h: cylH }, { liquid: o.liquid, level: o.level });
+  };
 
-  // 收口段与细管
-  vessel(ctx, outline, box, { liquid: o.dropColor, level: o.dripping ? 0.35 : 0 });
+  // 碗里的液体：裁在锥形里，液面才跟着碗的宽度收
+  vessel(ctx, bowlPath, { x, y, w, h: bowlH }, { liquid: o.liquid, level: o.level });
+
+  // 外轮廓：碗壁 + 颈 + 细管
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(px0, plateY);
+  ctx.lineTo(sx, neckY);
+  ctx.lineTo(sx, y + h);
+  ctx.moveTo(x + w, y);
+  ctx.lineTo(px1, plateY);
+  ctx.lineTo(sx + stemW, neckY);
+  ctx.lineTo(sx + stemW, y + h);
+  ctx.strokeStyle = GLASS.stroke;
+  ctx.lineWidth = GLASS.lw;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
 
   // 多孔瓷板
   ctx.save();
   ctx.strokeStyle = GLASS.stroke;
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(x + 1, plateY);
-  ctx.lineTo(x + w - 1, plateY);
+  ctx.moveTo(px0, plateY);
+  ctx.lineTo(px1, plateY);
   ctx.stroke();
   ctx.fillStyle = GLASS.soft;
-  for (let i = 0; i < 8; i++) {
-    const px = x + 7 + (w - 14) * (i / 7);
+  for (let i = 0; i < 5; i++) {
+    const qx = px0 + 3 + (plateW - 6) * (i / 4);
     ctx.beginPath();
-    ctx.arc(px, plateY - 3.5, 1.1, 0, Math.PI * 2);
+    ctx.arc(qx, plateY - 3.2, 1.0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
-  // 滤饼堆在瓷板上
+  // 滤饼：堆在瓷板上，宽度跟着瓷板走，是个中间略高的小丘
   if (o.cake > 0.01) {
-    const ch = (cylH * 0.55) * Math.min(1, o.cake);
+    const cw = plateW * (0.72 + 0.26 * Math.min(1, o.cake));
+    const ch = Math.min(bowlH * 0.42, 22) * Math.min(1, o.cake);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x + 2, plateY - 8 - ch, w - 4, ch + 6);
+    ctx.moveTo(cx - cw / 2, plateY);
+    ctx.quadraticCurveTo(cx - cw * 0.26, plateY - ch, cx, plateY - ch);
+    ctx.quadraticCurveTo(cx + cw * 0.26, plateY - ch, cx + cw / 2, plateY);
+    ctx.closePath();
     ctx.fillStyle = rgba(o.cakeColor || [150, 212, 202, 0.85]);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.22)';
     ctx.lineWidth = 0.8;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /* 滴液：从细管口往下滴。
+   * 传了 o.t 就按相位下落（越落越淡，落到底就重来）；不传就画三滴静止的——
+   * 后者是给自检页那种「不跑 rAF」的场合留的。 */
+  if (o.dripping) {
+    ctx.save();
+    ctx.fillStyle = rgba(o.dropColor || [200, 226, 220, 0.6]);
+    const tipY = y + h;
+    if (o.t) {
+      for (let i = 0; i < 3; i++) {
+        const ph = ((o.t * 0.85) + i / 3) % 1;
+        ctx.globalAlpha = Math.sin(Math.PI * ph) * 0.9;
+        ctx.beginPath();
+        ctx.ellipse(cx, tipY + 4 + ph * 30, 2.3, 3.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, tipY - 14 + i * 9, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.restore();
   }
 }
@@ -908,6 +1057,7 @@ export function comparisonTube(ctx, box, o = {}) {
     c.closePath();
   };
   vessel(ctx, path, box, o);
+  if (o.rim !== false) rimEllipse(ctx, x + w / 2, y, w / 2, o);
 
   // 25 mL 标线
   ctx.save();
@@ -1713,6 +1863,26 @@ export function testTubeRack(ctx, box, o = {}) {
       ctx.restore();
     } else {
       testTube(ctx, tubeBox, { liquid: tb.liquid, level: tb.level ?? 0.5 });
+      /* 上层不互溶相（萃取分层：上层戊醇 / 下层水相）。
+         以前没有这个字段，代码只好把整支管的下半段涂成一种颜色——
+         而「分层」恰恰是萃取的全部意义，那样画等于没表达。 */
+      if (tb.topLiquid && (tb.topLevel ?? 0) > 0.002) {
+        const tl = Math.min(1, tb.topLevel);
+        const bottom = tubeBox.y + tubeBox.h * (1 - (tb.level ?? 0.5));
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(tubeBox.x - 1, bottom - tubeBox.h * tl, tubeBox.w + 2, tubeBox.h * tl + 1);
+        ctx.clip();
+        ctx.fillStyle = rgba(tb.topLiquid);
+        ctx.fillRect(tubeBox.x - 1, bottom - tubeBox.h * tl, tubeBox.w + 2, tubeBox.h * tl);
+        ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(tubeBox.x, bottom);
+        ctx.lineTo(tubeBox.x + tubeBox.w, bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
       // solid 是**沉淀颜色**（[r,g,b,a]），数量走 solidLevel——两者曾混用一个字段，
       // 数组颜色被 `> 0.02` 静默判否（沉淀永远不画）、传数字则 rgba(0.15) 直接崩。
       const amount = tb.solidLevel ?? (Array.isArray(tb.solid) ? 0.9 : 0);
@@ -2037,6 +2207,37 @@ export function crystals(ctx, box, t, amount = 0, o = {}) {
   ctx.restore();
 }
 
+/**
+ * 器皿底部的固体粉末/颗粒（铁粉、草酸亚铁、AgCl 沉淀……）。
+ *
+ * 本质就是 `crystals()` 的小尺寸静态版本，但语义另起一名——
+ * 下游看到「powderPile」不会以为这里在画晶体。传死 t=0 且 spin:false，
+ * 所以它**永远静止**（粉末不该自己旋转）。
+ *
+ * @param box 只给器皿底部那一小条就对了：函数会把颗粒铺满给定框，
+ *            所以要自己把框收到底部（见 mohr-salt 第 2 步的用法）
+ */
+export function powderPile(ctx, box, amount = 0.5, o = {}) {
+  const col = o.color || IRON_POWDER_COLOR;
+  const n = Math.round(7 + 24 * Math.min(1, amount));
+  const rMax = Math.max(1.6, box.h * 0.16);
+  ctx.save();
+  ctx.fillStyle = rgba(col);
+  for (let i = 0; i < n; i++) {
+    // 与 crystals 同一套 R2 低差异序列（两个乘数互不成简单线性关系）
+    const u = (i * 0.7548776662466927) % 1;
+    const v = (i * 0.5698402909980532) % 1;
+    const px = box.x + box.w * (0.05 + 0.9 * u);
+    // 堆成小丘：中间高、两侧落到框底
+    const mound = Math.max(0.18, 1 - Math.abs(u - 0.5) * 1.7);
+    const py = box.y + box.h * (1 - mound * (0.25 + 0.75 * v));
+    ctx.beginPath();
+    ctx.arc(px, py, rMax * (0.45 + 0.75 * v), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** 热气 / 蒸汽 */
 export function steam(ctx, box, t, intensity = 1) {
   const n = Math.round(3 + 7 * Math.min(1, intensity));
@@ -2127,7 +2328,7 @@ export const BENCH_Y = 0.88;
 
 /**
  * 画台面线。所有「放在台面上」的器皿都应让它底边落在 H * BENCH_Y 上。
- * onBench(w, h) 帮助函数按这个比例反推器皿的 y。
+ * 本文件不再提供「反推顶边 y」的辅助函数——器皿各自按 h 算自己的位置即可。
  */
 export function drawBench(ctx, W, H) {
   const y = H * BENCH_Y;
@@ -2142,9 +2343,6 @@ export function drawBench(ctx, W, H) {
   return y;
 }
 
-/** 把高 h 的器皿贴到台面线上，返回它的顶边 y */
-export function onBench(H, h) { return H * BENCH_Y - h; }
-
 /* ============================================================
  * 场景画布
  * ============================================================ */
@@ -2153,27 +2351,78 @@ export function onBench(H, h) { return H * BENCH_Y - h; }
  * 一块可以播放动画的画布。
  * 装置绘制函数是纯的，动画由这里统一驱动——
  * 这样「哪一步在冒泡、哪一步在长晶体」只由绘制回调里的参数决定。
+ *
+ * 绘制回调签名：`(ctx, w, h, t, ts)`
+ *   t  —— 自 `start()` 起的总秒数。**循环动画**（气泡、热气、液流）用它。
+ *   ts —— **本步已进行的秒数**，由 `set(fn, { resetClock: true })` 归零。
+ *         只给「入场/一次性」动画用（沉淀下沉、晶体析出、液面到位）。
+ *
+ * ⚠️ 两者搞反的症状很好认：
+ *   循环动画用 ts → 每次切步，气泡/热汽会瞬移回起点；
+ *   一次性动画用 t  → 学生在第 3 步停留 60 秒再跳到「生成沉淀」那一步，
+ *                     絮团早就沉完了，什么也看不到（这就是 ts 要解决的问题）。
  */
 export class Scene {
   constructor(canvas) {
     this.cv = canvas;
     this._raf = null;
     this._t0 = 0;
+    this._t = 0;
+    this._ts0 = 0;         // 本步时间轴的零点（以 _t 为基准）
     this._draw = null;
+    this._snap = null;     // 切步过渡用的上一帧快照
+    this._snapAt = 0;
+    // 只在构造时判一次，别每帧判
+    this._reduceMotion = typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this._loop = this._loop.bind(this);
     this._onResize = () => this.render();
     window.addEventListener('resize', this._onResize);
   }
 
-  /** 设定绘制回调；回调签名为 (ctx, w, h, t秒) */
-  set(fn) { this._draw = fn; this.render(); }
+  /**
+   * 设定绘制回调。
+   * @param opts.resetClock  把「本步已进行秒数」ts 归零
+   * @param opts.transition  与上一帧做 ~250ms 交叉淡入（切步用；**拖滑块不要传**，会频闪）
+   */
+  set(fn, opts = {}) {
+    if (opts.transition && this._draw && !this._reduceMotion && this.cv.width) {
+      const s = this._snap || (this._snap = document.createElement('canvas'));
+      s.width = this.cv.width;
+      s.height = this.cv.height;
+      s.getContext('2d').drawImage(this.cv, 0, 0);
+      this._snapAt = this._t;
+    } else if (opts.transition === false) {
+      this._snap = null;
+    }
+    this._draw = fn;
+    if (opts.resetClock) this._ts0 = this._t;   // 切步时通常两者同时要，所以不清快照
+    this.render();
+  }
 
   render() { if (this._draw) this._paint(); }
 
   _paint() {
     const c = fit(this.cv);
     if (!c || !this._draw) return null;
-    this._draw(c.ctx, c.w, c.h, this._t || 0);
+    const t = this._t || 0;
+    // set() 可能在下一帧之前被调用（拖滑块每帧都调），所以 _t 可能还停在上一帧，
+    // 用 max(0,…) 兜住，否则 ts 会出现负值
+    const ts = Math.max(0, t - (this._ts0 || 0));
+    this._draw(c.ctx, c.w, c.h, t, ts);
+
+    // 切步交叉淡入：新场景已经画好，把上一帧快照按 1→0 叠上去
+    if (this._snap) {
+      const a = 1 - Math.min(1, (t - this._snapAt) / 0.25);
+      if (a <= 0) {
+        this._snap = null;
+      } else {
+        c.ctx.save();
+        c.ctx.globalAlpha = a;
+        c.ctx.drawImage(this._snap, 0, 0, c.w, c.h);
+        c.ctx.restore();
+      }
+    }
     return c;
   }
 
@@ -2185,6 +2434,7 @@ export class Scene {
 
   stop() {
     if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+    this._snap = null;    // 停下来的话快照就没意义了，别在恢复时闪回旧画面
   }
 
   _loop(now) {

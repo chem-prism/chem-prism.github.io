@@ -9,7 +9,7 @@
  * ⚠️ 课件 P9 只有八条内容条目与试剂清单、没有逐步操作细节——
  * 本模拟器的子实验顺序按条目与试剂清单还原，与课上具体做法不同处请反馈调整。
  */
-import { h } from './common.js';
+import { h, noteAt } from './common.js';
 import {
   silverHalideDissolution, cuAmmoniaState,
 } from '../chem.js';
@@ -262,15 +262,6 @@ const C_KCO = [232, 210, 80, 1];
 const C_CO_AMYL = [40, 80, 190, 0.75];        // 戊醇层蓝
 const C_CO_AQ = [228, 190, 195, 0.4];         // 水相淡粉（Co²⁺）
 
-function note(ctx, x, y, text, color = 'rgba(160,180,196,0.9)') {
-  ctx.save();
-  ctx.font = '600 11px "PingFang SC", sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
 
 function draw(ctx, W, H, t, i, r, ops) {
   const B = drawBench(ctx, W, H);
@@ -294,20 +285,39 @@ function draw(ctx, W, H, t, i, r, ops) {
     testTubeRack(ctx, { x: cx + 40, y: B - 160, w: 160, h: 160 }, {
       tubes: [{ liquid: CLEAR_COLOR, level: 0.4 }, { liquid: CLEAR_COLOR, level: 0.4 }, { liquid: CLEAR_COLOR, level: 0.4 }],
     });
-    note(ctx, 14, 40, '1 mL ≈ 20 滴；滴瓶口朝左或右、不朝自己');
+    noteAt(ctx, 14, 40, '1 mL ≈ 20 滴；滴瓶口朝左或右、不朝自己');
     return;
   }
   if (i === 1) {
-    const tube = { x: cx - 26, y: B - 210, w: 52, h: 210 };
+    /* 逐滴加氨水——本实验的招牌动作，现象树的第一层分支。
+       试管原来 52×210（长径比 4:1）偏胖，改成 40×196 更像试管；
+       并把「逐滴」真正画出来：滴珠自管口落下，用 t 驱动相位（循环动画）。 */
+    const tube = { x: cx - 20, y: B - 196, w: 40, h: 196 };
+    const level = 0.46;
     testTube(ctx, tube, {
       liquid: r.cu.state === 'precipitate' ? C_CU_PPT : C_CU_DEEP,
-      level: 0.52,
+      level,
     });
-    reagentBottle(ctx, { x: cx + 70, y: B - 120, w: 44, h: 120 },
+    // 液面高度——滴珠落到这里就该消失
+    const surfaceY = tube.y + tube.h * (1 - level);
+    ctx.save();
+    ctx.fillStyle = 'rgba(190, 214, 236, 0.9)';
+    for (let k = 0; k < 3; k++) {
+      const ph = ((t * 0.5) + k / 3) % 1;
+      const dy = tube.y + 16 + (surfaceY - tube.y - 20) * ph;
+      ctx.globalAlpha = 0.9 * Math.sin(Math.PI * Math.min(1, ph * 1.15));
+      ctx.beginPath();
+      ctx.ellipse(cx, dy, 3.0, 4.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    // 滴瓶靠右放，标示试剂；滴珠画在管口而不是从瓶嘴拉一条线——
+    // 瓶与管不在同一垂线上，拉线会变成一条斜着的"水柱"
+    reagentBottle(ctx, { x: cx + 74, y: B - 132, w: 40, h: 132 },
       { shape: 'drop', liquid: CLEAR_COLOR, level: 0.5, label: ['NH₃·H₂O'] });
-    note(ctx, 14, 40, r.cu.state === 'deepblue' ? '逐滴→沉淀→过量溶解：深蓝 [Cu(NH₃)₄]²⁺' : r.cu.state === 'precipitate' ? '浅蓝沉淀——继续滴加会溶解' : '氨水还不够（先出现浅蓝沉淀）',
+    noteAt(ctx, 14, 40, r.cu.state === 'deepblue' ? '逐滴→沉淀→过量溶解：深蓝 [Cu(NH₃)₄]²⁺' : r.cu.state === 'precipitate' ? '浅蓝沉淀——继续滴加会溶解' : '氨水还不够（先出现浅蓝沉淀）',
       r.cu.state === 'deepblue' ? 'rgba(160,180,196,0.9)' : '#e8a33d');
-    if (ops.cuMode === 1) note(ctx, 14, 58, '一次全倒：看不到中间沉淀步骤', '#e05a4f');
+    if (ops.cuMode === 1) noteAt(ctx, 14, 58, '一次全倒：看不到中间沉淀步骤', '#e05a4f');
     return;
   }
   if (i === 2 || i === 3) {
@@ -328,8 +338,8 @@ function draw(ctx, W, H, t, i, r, ops) {
           : []),
       ],
     });
-    if (i === 2 && ops.cuParts === 1) note(ctx, cx + 60, B - 120, '对照（NaOH）没做', '#e8a33d');
-    if (i === 3) note(ctx, 14, 40, ops.cuAcid === 0 ? 'H₂SO₄ 抢走 NH₃ → 褪色' : 'NaOH 不消耗 NH₃ → 不褪色', ops.cuAcid === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    if (i === 2 && ops.cuParts === 1) noteAt(ctx, cx + 60, B - 120, '对照（NaOH）没做', '#e8a33d');
+    if (i === 3) noteAt(ctx, 14, 40, ops.cuAcid === 0 ? 'H₂SO₄ 抢走 NH₃ → 褪色' : 'NaOH 不消耗 NH₃ → 不褪色', ops.cuAcid === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 4) {
@@ -340,7 +350,7 @@ function draw(ctx, W, H, t, i, r, ops) {
         { liquid: faded ? C_FADE : [200, 70, 78, 0.5], level: 0.5, label: faded ? '+NH₄F 无色' : '+水 仍红' },
       ],
     });
-    note(ctx, 14, 40, faded ? 'F⁻ 抢走 Fe³⁺，血红褪去——掩蔽' : '加水只稀释不褪色（对照）', faded ? 'rgba(160,180,196,0.9)' : '#e8a33d');
+    noteAt(ctx, 14, 40, faded ? 'F⁻ 抢走 Fe³⁺，血红褪去——掩蔽' : '加水只稀释不褪色（对照）', faded ? 'rgba(160,180,196,0.9)' : '#e8a33d');
     return;
   }
   if (i === 5) {
@@ -359,7 +369,7 @@ function draw(ctx, W, H, t, i, r, ops) {
     testTubeRack(ctx, { x: cx - 160, y: B - 200, w: 280, h: 200 }, {
       tubes: [tubeFor('AgCl', C_AGCL, 'AgCl'), tubeFor('AgBr', C_AGBR, 'AgBr'), tubeFor('AgI', C_AGI, 'AgI')],
     });
-    note(ctx, 14, 40, `溶解剂：${lig}——判据 K = Ksp×K稳`, 'rgba(160,180,196,0.9)');
+    noteAt(ctx, 14, 40, `溶解剂：${lig}——判据 K = Ksp×K稳`, 'rgba(160,180,196,0.9)');
     return;
   }
   if (i === 6) {
@@ -372,7 +382,7 @@ function draw(ctx, W, H, t, i, r, ops) {
           : [{ dashed: true, label: 'Ag₂S 未做' }]),
       ],
     });
-    note(ctx, 14, 40, full ? 'Ksp 递降：10⁻¹⁰ → 10⁻¹⁷ → 10⁻⁵⁰（Na₂S 在通风橱做）' : '少做了 Ag₂S 一步（Ksp 最小、转化最彻底）', full ? 'rgba(160,180,196,0.9)' : '#e8a33d');
+    noteAt(ctx, 14, 40, full ? 'Ksp 递降：10⁻¹⁰ → 10⁻¹⁷ → 10⁻⁵⁰（Na₂S 在通风橱做）' : '少做了 Ag₂S 一步（Ksp 最小、转化最彻底）', full ? 'rgba(160,180,196,0.9)' : '#e8a33d');
     return;
   }
   if (i === 7) {
@@ -384,7 +394,7 @@ function draw(ctx, W, H, t, i, r, ops) {
           : []),
       ],
     });
-    note(ctx, 14, 40, ops.s2o3Check === 0 ? '棕黄色褪去 = I₂ 被还原（氧化还原的证据）' : '没做 I₂ 检验——少一个证据', ops.s2o3Check === 0 ? 'rgba(160,180,196,0.9)' : '#e8a33d');
+    noteAt(ctx, 14, 40, ops.s2o3Check === 0 ? '棕黄色褪去 = I₂ 被还原（氧化还原的证据）' : '没做 I₂ 检验——少一个证据', ops.s2o3Check === 0 ? 'rgba(160,180,196,0.9)' : '#e8a33d');
     return;
   }
   if (i === 8) {
@@ -399,7 +409,7 @@ function draw(ctx, W, H, t, i, r, ops) {
       liquid: [228, 234, 238, 0.25], level: 0.6, pellet: ops.tubeBalance === 0 ? 0.9 : 0,
       pelletColor: C_CUI,
     });
-    note(ctx, 14, 40, ops.tubeBalance === 0
+    noteAt(ctx, 14, 40, ops.tubeBalance === 0
       ? (ops.centrifugeRpm >= 2500 ? '对称放置，沉淀压实、上清液澄清' : '转速偏低：上清液仍浑')
       : '只放一支：不平衡、剧烈振动——严禁', ops.tubeBalance === 0 ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
@@ -413,7 +423,7 @@ function draw(ctx, W, H, t, i, r, ops) {
         label: red ? '丁二肟镍 鲜红↓' : '酸性：不显红',
       }],
     });
-    note(ctx, 14, 40, red ? '先氨性、再加丁二肟——条件对了才有鲜红' : '酸性下形不成螯合环：鉴定失败', red ? 'rgba(160,180,196,0.9)' : '#e05a4f');
+    noteAt(ctx, 14, 40, red ? '先氨性、再加丁二肟——条件对了才有鲜红' : '酸性下形不成螯合环：鉴定失败', red ? 'rgba(160,180,196,0.9)' : '#e05a4f');
     return;
   }
   if (i === 10) {
@@ -424,25 +434,28 @@ function draw(ctx, W, H, t, i, r, ops) {
         ...(kYes ? [{ liquid: [234, 238, 242, 0.25], level: 0.5, label: '+NaCl 对照：无' }] : []),
       ],
     });
-    note(ctx, 14, 40, kYes ? 'K⁺ 的黄色沉淀——配合物用于鉴定' : 'NaCl 加进去什么都没有（对照）', kYes ? 'rgba(160,180,196,0.9)' : '#e8a33d');
+    noteAt(ctx, 14, 40, kYes ? 'K⁺ 的黄色沉淀——配合物用于鉴定' : 'NaCl 加进去什么都没有（对照）', kYes ? 'rgba(160,180,196,0.9)' : '#e8a33d');
     return;
   }
   // i === 11：Co-SCN 萃取
   const amyl = ops.amylAdd === 0;
   testTubeRack(ctx, { x: cx - 150, y: B - 200, w: 260, h: 200 }, {
     tubes: [
-      { liquid: C_CO_AQ, level: 0.5, label: '水相：几乎看不出' },
+      { liquid: C_CO_AQ, level: 0.45, label: '水相：几乎看不出' },
+      // 萃取的意义就在「分层」：同一支管里上层戊醇蓝、下层水相淡。
+      // 原来只把下半段涂成一种颜色，等于没表达这一步。
       ...(amyl
-        ? [{ liquid: C_CO_AMYL, level: 0.5, label: '戊醇层：显蓝' }]
+        ? [{ liquid: [206, 190, 214, 0.30], level: 0.44, topLiquid: C_CO_AMYL, topLevel: 0.44,
+             label: '上层戊醇显蓝' }]
         : []),
     ],
   });
   if (amyl) {
     // 在第二支管上叠一层戊醇（上层蓝）
-    note(ctx, 14, 40, '振荡后静置分层：上层戊醇蓝、下层水相淡粉——萃取把颜色「浓缩」出来');
-    note(ctx, 14, 58, '戊醇实验在通风橱做、废液回收', 'rgba(160,180,196,0.75)');
+    noteAt(ctx, 14, 40, '振荡后静置分层：上层戊醇蓝、下层水相淡粉——萃取把颜色「浓缩」出来');
+    noteAt(ctx, 14, 58, '戊醇实验在通风橱做、废液回收', 'rgba(160,180,196,0.75)');
   } else {
-    note(ctx, 14, 40, '不加戊醇：水相蓝色太浅，看不出来', '#e8a33d');
+    noteAt(ctx, 14, 40, '不加戊醇：水相蓝色太浅，看不出来', '#e8a33d');
   }
 }
 
@@ -720,3 +733,10 @@ export function mount(root, params = {}) {
     extra: (host, i, r) => { if (i >= 1) addReportTable(host, i, r); },
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

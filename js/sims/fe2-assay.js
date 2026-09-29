@@ -5,7 +5,7 @@
  * 计量关系按课件反应式计算；操作偏差只用方向性教学模型表达。
  */
 import { permanganateStandardization, permanganateFe2Assay, permanganateConditionFactor } from '../chem.js';
-import { h } from './common.js';
+import { h, pourStream } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   balance, conicalFlask, burette, volumetricFlask, pipette, beaker,
@@ -113,12 +113,8 @@ function draw(ctx, W, H, t, i, r, ops) {
   });
   const flask = { x: cx - 52, y: B - 140, w: 104, h: 140 };
   conicalFlask(ctx, flask, { liquid: i >= 5 ? [190, 90, 110, 0.32] : [235, 230, 210, 0.24], level: 0.38 });
-  ctx.strokeStyle = 'rgba(150,64,90,0.75)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, buretteBox.y + buretteBox.h);
-  ctx.lineTo(cx, flask.y + 8);
-  ctx.stroke();
+  pourStream(ctx, { x: cx, y: buretteBox.y + buretteBox.h }, { x: cx, y: flask.y + 8 },
+    { color: [150, 64, 90], alpha: 0.72, width: 3, t });
   if (i === 3 || i === 5) bubbles(ctx, { x: flask.x + 20, y: flask.y + 35, w: 64, h: 100 }, t, 0.25);
   if (i >= 3) {
     ctx.fillStyle = '#e05a4f'; ctx.font = '600 13px ui-monospace, Menlo, monospace';
@@ -212,3 +208,10 @@ export function mount(root, params = {}) {
     extra: (host, i, r) => { if (i >= 5) addTable(host, r); },
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };

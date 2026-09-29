@@ -6,142 +6,296 @@
 <style>
   body { margin:0; background:#0a0e12; color:#dde5ec; font-family:"PingFang SC",sans-serif; }
   canvas { display:block; }
+  #stat { position:fixed; right:10px; bottom:10px; z-index:5; font-size:12px;
+          background:rgba(10,14,18,.9); border:1px solid #212b34; border-radius:5px;
+          padding:5px 10px; color:#8798a5; }
+  #stat b { color:#6bbc57; } #stat .bad { color:#e05a4f; }
 </style>
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="stat"></div>
 <script type="module">
+/*
+ * 器皿级自检 —— 看「单个器皿画得对不对」。
+ *
+ * 三个分工（别混用）：
+ *   本页            器皿形状、液位、动效形状 —— 逐件放大，看得出边界情况
+ *   _scenes-all.html 构图与对齐 —— 98 个场景同屏、可冻结 t、可断言
+ *   _scenes-test.html 真机 —— 真 CSS、真尺寸、窄屏断点
+ *
+ * 本页**不跑 rAF**：所有动效都喂固定的 t 值。固定值才能截图比对，
+ * 也才能看出一个动效的「起—中—末」形状对不对。
+ */
 import * as G from './js/glassware.js';
 
-const COLS = 5, CELL_W = 200, CELL_H = 260;
+const LIQ = [110, 200, 190, 0.55];
+const WARM = [226, 168, 70, 0.62];
+const RED = [203, 64, 69, 0.85];
+
+// 动效三帧。0 是起点、0.8 走了一小段、2.4 已进入稳态。
+const PHASES = [0, 0.8, 2.4];
+// 液位扫描。「0.02」这一列是 P2（vessel 空腔改造）的验收工具：
+// 现在它看起来像「装了黑色液体」，改完应该读作「玻璃」。
+const LEVELS = [0, 0.02, 0.5, 0.98];
+
+const SECTIONS = [];
+
+/* ---------- 1. 液位扫描 ---------- */
+SECTIONS.push({
+  // 回归护栏：改 vessel() 前，0 与 0.02 两列**看起来必须一样**。
+  // 曾经它们差一整层高光——0.02 那列读作「装了黑色液体」。
+  title: '液位扫描 —— 0 / 0.02 / 0.5 / 0.98。「0」与「0.02」两列必须看起来一样，不一样就是 vessel() 又把高光挂回液位上了',
+  cellW: 190, cellH: 250, cols: 4,
+  items: LEVELS.flatMap(lv => [
+    [`锥形瓶 ${lv}`,      (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: lv })],
+    [`大试管 ${lv}`,      (c, b) => G.testTube(c, b, { liquid: LIQ, level: lv })],
+    [`量气管 ${lv}`,      (c, b) => G.gasMeasuringTube(c, b, { liquid: [150, 190, 215, 0.30], level: lv })],
+    [`烧杯 ${lv}`,        (c, b) => G.beaker(c, b, { liquid: LIQ, level: lv })],
+    [`容量瓶 ${lv}`,      (c, b) => G.volumetricFlask(c, b, { liquid: LIQ, level: lv })],
+    [`滴定管 ${lv}`,      (c, b) => G.burette(c, b, { liquid: WARM, level: lv })],
+  ]),
+});
+
+/* ---------- 2. 动效三帧 ---------- */
+SECTIONS.push({
+  title: `动效三帧 —— t = ${PHASES.join(' / ')}。三格必须不同；相同说明这个动效是死的`,
+  cellW: 190, cellH: 250, cols: 3,
+  items: [
+    ['气泡',   (c, b, t) => G.bubbles(c, b, t, 0.9)],
+    ['热气',   (c, b, t) => G.steam(c, b, t, 0.8)],
+    ['晶体 spin',      (c, b, t) => G.crystals(c, b, t, 0.7, { color: G.MOHR_CRYSTAL_COLOR })],
+    ['晶体 spin:false', (c, b, t) => G.crystals(c, b, t, 0.7, { color: G.MOHR_CRYSTAL_COLOR, spin: false })],
+    ['絮状沉淀', (c, b, t) => G.precipitateFlocs(c, b, t, 0.8)],
+    ['水面波纹', (c, b, t) => G.developTray(c, b, { density: 0.9, oxidized: 0.4, t })],
+    ['离心机转子', (c, b, t) => G.centrifuge(c, b, { open: true, spinning: true, t })],
+    ['水浴热气', (c, b, t) => G.waterBath(c, b, { steam: 0.7, t, ringW: b.w * 0.55 })],
+    ['电热板热气', (c, b, t) => G.hotplate(c, b, { heat: 0.8, steam: 0.5, t })],
+    ['表面皿晶体', (c, b, t) => G.watchGlass(c, b, { crystal: 0.8, crystalColor: G.MOHR_CRYSTAL_COLOR, t })],
+  ].flatMap(([name, fn]) => PHASES.map(t => [`${name} t=${t}`, (c, b) => fn(c, b, t)])),
+});
+
+/* ---------- 3. 实际尺寸复刻 ----------
+ * 把出问题的**真实调用**照抄进来。设施与场景之间的 bug（位置错、朝向反、
+ * 比例不对）只有在这一层才看得出来——缩略图里根本发现不了。
+ * 用生产尺寸 725×340，与真机一致。 */
+const REPLICA_W = 725, REPLICA_H = 340;
+SECTIONS.push({
+  title: '实际尺寸复刻 —— 生产尺寸 725×340。左边是问题现场，右边是应有形态',
+  cellW: REPLICA_W, cellH: REPLICA_H + 22, cols: 1,
+  items: [
+    ['【问题】mohr-salt 第2步：量筒 tilt=1.42（81.4°，几乎躺平）且筒口朝上', (c, _b, W, H) => {
+      // 照抄 sims/mohr-salt.js 第 2 步（含它手画的液流）
+      const B = G.drawBench(c, W, H), cx = W / 2;
+      const flask = { x: cx - 55, y: B - H * 0.48, w: 110, h: H * 0.48 };
+      G.conicalFlask(c, flask, { liquid: G.CLEAR_COLOR, level: 0.15 });
+      G.cylinder(c, { x: cx - 145, y: H * 0.18, w: 42, h: H * 0.34 }, { liquid: G.CLEAR_COLOR, level: 0.55, tilt: 1.42 });
+      c.strokeStyle = 'rgba(222,232,240,0.5)'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(cx - 115, H * 0.38); c.quadraticCurveTo(cx - 70, H * 0.44, cx - 8, flask.y + 8); c.stroke();
+    }],
+    ['【问题】magnesium-molar 第2步：铁圈空悬、试管站在台面上、量气管无支撑', (c, _b, W, H) => {
+      // 照抄 sims/magnesium-molar.js 的通用场景
+      const B = G.drawBench(c, W, H), cx = W / 2;
+      const tube = { x: cx + 50, y: H * 0.13, w: 72, h: H * 0.67 };
+      G.retortStand(c, { x: cx - 205, y: H * 0.14, w: 135, h: H * 0.70 },
+        { clamp: { x: cx - 70, y: H * 0.32, radius: 34 } });
+      G.testTube(c, { x: cx - 105, y: B - 155, w: 48, h: 155 }, { liquid: [150, 205, 214, 0.32], level: 0.30 });
+      G.tubing(c, [[cx - 57, B - 145], [cx + 2, B - 145], [cx + 2, H * 0.20], [cx + 50, H * 0.20]], { width: 5 });
+      G.gasMeasuringTube(c, tube, { liquid: [150, 190, 215, 0.28], level: 0.48 });
+    }],
+  ],
+});
+
+/* ---------- 4. 逐件器皿（原有清单） ---------- */
+SECTIONS.push({
+  title: '逐件器皿',
+  cellW: 200, cellH: 260, cols: 5,
+  items: [
+    ['锥形瓶 液位0.35', (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.35 })],
+    ['锥形瓶 液位0.7',  (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.7 })],
+    ['量筒 正立',        (c, b) => G.cylinder(c, b, { liquid: LIQ, level: 0.6 })],
+    ['量筒 倾斜 30°',    (c, b) => G.cylinder(c, b, { liquid: LIQ, level: 0.62, tilt: 0.52 })],
+    ['量筒 倾斜 81.4°',  (c, b) => G.cylinder(c, b, { liquid: LIQ, level: 0.62, tilt: 1.42 })],
+    ['短颈漏斗',         (c, b) => G.funnel(c, b, { liquid: LIQ, level: 0.45, stemLevel: 0.8 })],
+    ['蒸发皿',           (c, b) => G.evapDish(c, b, { liquid: LIQ, level: 0.45 })],
+    ['水浴锅',           (c, b) => G.waterBath(c, b, { steam: 0.7, t: 1.2, ringW: b.w * 0.55 })],
+    ['布氏漏斗',         (c, b) => G.buchner(c, b, { liquid: LIQ, level: 0.4, cake: 0.65, cakeColor: G.MOHR_CRYSTAL_COLOR, dropColor: LIQ, dripping: true })],
+    ['抽滤瓶',           (c, b) => G.suctionFlask(c, b, { liquid: LIQ, level: 0.3 })],
+    ['表面皿',           (c, b) => G.watchGlass(c, b, { crystal: 0.8, crystalColor: G.MOHR_CRYSTAL_COLOR, t: 1 })],
+    ['比色管',           (c, b) => G.comparisonTube(c, b, { liquid: RED, level: 0.62 })],
+    ['台秤',             (c, b) => G.balance(c, b, { item: true, itemColor: G.MOHR_CRYSTAL_COLOR, reading: '10.42', tone: 'good' })],
+    ['电热板',           (c, b) => G.hotplate(c, b, { heat: 0.8, steam: 0.4, t: 1 })],
+    ['玻璃棒',           (c, b) => G.stirringRod(c, b, { angle: 18 })],
+    ['气泡 + 晶体',      (c, b) => { G.bubbles(c, b, 1.5, 0.9);
+                                     G.crystals(c, { x: b.x + 10, y: b.y + 10, w: b.w - 20, h: b.h - 20 }, 1.5, 0.7, { color: G.MOHR_CRYSTAL_COLOR }); }],
+    ['量气管',            (c, b) => G.gasMeasuringTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.52 })],
+    ['滴定管',            (c, b) => G.burette(c, b, { liquid: WARM, level: 0.28 })],
+    ['容量瓶',            (c, b) => G.volumetricFlask(c, b, { liquid: LIQ, level: 0.46 })],
+    ['移液管',            (c, b) => G.pipette(c, b, { angle: -0.10 })],
+    ['大试管',            (c, b) => G.testTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.42 })],
+    ['磁力搅拌器',        (c, b) => G.stirPlate(c, b)],
+    ['温度计',            (c, b) => G.thermometer(c, b)],
+    ['秒表',              (c, b) => G.stopwatch(c, b, { text: '82.0 s' })],
+    ['铁架台',            (c, b) => G.retortStand(c, b, { clamp: { x: b.x + b.w * 0.72, y: b.y + b.h * 0.34, radius: b.w * 0.25 } })],
+    ['导管',              (c, b) => G.tubing(c, [
+      [b.x + 8, b.y + b.h * 0.72], [b.x + b.w * 0.38, b.y + b.h * 0.72],
+      [b.x + b.w * 0.38, b.y + b.h * 0.30], [b.x + b.w - 8, b.y + b.h * 0.30],
+    ], { width: 6 })],
+    ['试剂瓶 细口',      (c, b) => G.reagentBottle(c, b, {
+      liquid: [222, 232, 240, 0.20], level: 0.62, label: ['EDTA 标液', '0.005 M'] })],
+    ['试剂瓶 广口棕',    (c, b) => G.reagentBottle(c, b, {
+      shape: 'wide', solid: [168, 62, 84, 0.78], level: 0.45,
+      label: ['钙指示剂'], labelTone: 'amber', cap: 'stopper', brown: true })],
+    ['滴瓶 铬黑T',       (c, b) => G.reagentBottle(c, b, {
+      shape: 'drop', liquid: [70, 60, 120, 0.55], level: 0.50, label: ['铬黑T'] })],
+    ['洗耳球 + 移液管',  (c, b) => {
+      G.washBulb(c, { x: b.x + 6, y: b.y + b.h * 0.30, w: 44, h: 53 }, { squeeze: 0.4 });
+      G.pipette(c, { x: b.x + 34, y: b.y + b.h * 0.26, w: b.w - 40, h: 26 }, { angle: Math.PI / 2 });
+    }],
+    ['絮状沉淀 Mg(OH)₂', (c, b) => {
+      G.conicalFlask(c, b, { liquid: [214, 220, 228, 0.30], level: 0.40 });
+      G.precipitateFlocs(c, { x: b.x + b.w * 0.22, y: b.y + b.h * 0.42, w: b.w * 0.56, h: b.h * 0.52 }, 1.5, 0.8);
+    }],
+    ['pH 计 整机', (c, b) => {
+      G.beaker(c, { x: b.x + 74, y: b.y + b.h - 92, w: 66, h: 92 }, { liquid: [214, 226, 238, 0.28], level: 0.52 });
+      G.phMeter(c, { x: b.x, y: b.y + 4, w: b.w, h: b.h - 8 }, { reading: '3.35', slopePct: 98.2, bulbY: b.y + b.h - 46 });
+    }],
+    ['分光光度计 整机', (c, b) => G.spectrophotometer(c,
+      { x: b.x, y: b.y + b.h * 0.24, w: b.w, h: b.h * 0.72 },
+      { wavelength: 480, reading: '0.430', cell: [214, 78, 92, 0.7] })],
+    ['比色皿 ×4（配对）', (c, b) => {
+      const y0 = b.y + b.h * 0.42;
+      for (let i = 0; i < 4; i++) {
+        G.cuvette(c, { x: b.x + 8 + i * 28, y: y0, w: 18, h: 62 },
+          { liquid: i === 0 ? [225, 232, 238, 0.2] : [214, 78, 92, 0.55] });
+      }
+    }],
+    ['蓝晒印相卡 成品', (c, b) => G.cyanotypePrint(c,
+      { x: b.x + 18, y: b.y + b.h * 0.34, w: b.w - 36, h: (b.w - 36) * 0.72 },
+      { state: 'washed', density: 0.96, oxidized: 1 })],
+    ['紫外曝光箱', (c, b) => G.uvExposureBox(c, { x: b.x, y: b.y + 12, w: b.w, h: b.h - 24 },
+      { on: true, seconds: 40 })],
+    ['显影盘（显影中）', (c, b) => G.developTray(c,
+      { x: b.x, y: b.y + b.h * 0.26, w: b.w, h: b.h * 0.52 },
+      { density: 0.9, oxidized: 0.4, t: 1.2 })],
+    ['离心机（开盖）', (c, b) => G.centrifuge(c, { x: b.x, y: b.y + b.h * 0.30, w: b.w, h: b.h * 0.62 },
+      { open: true, rpm: 3000, minutes: 5, spinning: true, t: 1.5 })],
+    ['离心管 ×3', (c, b) => {
+      for (let i = 0; i < 3; i++) {
+        G.centrifugeTube(c, { x: b.x + 10 + i * 34, y: b.y + b.h * 0.34, w: 24, h: 100 },
+          { liquid: [214, 226, 238, 0.3], level: 0.6, pellet: i === 1 ? 0.9 : 0, pelletColor: [236, 238, 240, 0.95] });
+      }
+    }],
+    ['试管架 ×4', (c, b) => G.testTubeRack(c, { x: b.x + 4, y: b.y + b.h * 0.28, w: b.w - 8, h: b.h * 0.56 }, {
+      tubes: [
+        { liquid: [20, 60, 150, 0.65], level: 0.5, label: '深蓝' },
+        { liquid: [235, 240, 244, 0.4], level: 0.5, solid: [240, 242, 244, 1], solidLevel: 0.8, label: 'AgCl' },
+        { liquid: [216, 220, 140, 0.55], level: 0.5, solid: [222, 208, 90, 1], solidLevel: 0.8, label: 'AgI' },
+        { dashed: true, label: '对照' },
+      ],
+    })],
+  ],
+});
+
+/* ---------- 排版与绘制 ----------
+ * 单张 canvas，按 section 顺序排；每格画完量一次非背景像素占比，
+ * 空白格描红边 —— 专抓「静默不画」（CLAUDE.md 坑 15 那一族）。 */
+const PAD = 10, GAP = 6, HEAD = 26;
+const canvasW = Math.max(...SECTIONS.map(s => s.cols * s.cellW + (s.cols - 1) * GAP)) + PAD * 2;
+let canvasH = PAD;
+for (const s of SECTIONS) canvasH += HEAD + Math.ceil(s.items.length / s.cols) * (s.cellH + GAP) + GAP;
+
 const cv = document.getElementById('cv');
 const dpr = 2;
-
-const LIQ = [110, 200, 190, 0.55];
-
-// 每格画一个器皿：坐标系原点挪到格子左上角
-const items = [
-  ['锥形瓶 液位0.35', (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.35 })],
-  ['锥形瓶 液位0.7',  (c, b) => G.conicalFlask(c, b, { liquid: LIQ, level: 0.7 })],
-  ['量筒 正立',        (c, b) => G.cylinder(c, b, { liquid: LIQ, level: 0.6 })],
-  ['加酸场景（实际尺寸）', (c, b) => {
-    // 复刻 sims/mohr-salt.js 里 'pour' 那一步的构图与尺寸
-    c.save();
-    c.translate(b.x + b.w * 0.30, b.y + b.h * 0.46);
-    c.rotate(0.42);
-    G.cylinder(c, { x: -21, y: -68, w: 42, h: 136 }, { liquid: LIQ, level: 0.62 });
-    c.restore();
-    G.conicalFlask(c, { x: b.x + b.w * 0.46, y: b.y + 12, w: 62, h: b.h - 24 },
-      { liquid: LIQ, level: 0.18 });
-  }],
-  ['短颈漏斗',         (c, b) => G.funnel(c, b, { liquid: LIQ, level: 0.45, stemLevel: 0.8 })],
-
-  ['蒸发皿',           (c, b) => G.evapDish(c, b, { liquid: LIQ, level: 0.45 })],
-  ['水浴锅',           (c, b) => G.waterBath(c, b, { steam: 0.7, t: 1.2, ringW: b.w * 0.55 })],
-  ['布氏漏斗',         (c, b) => G.buchner(c, b, { liquid: LIQ, level: 0.4, cake: 0.65, cakeColor: G.MOHR_CRYSTAL_COLOR, dropColor: LIQ, dripping: true })],
-  ['抽滤瓶',           (c, b) => G.suctionFlask(c, b, { liquid: LIQ, level: 0.3 })],
-  ['表面皿',           (c, b) => G.watchGlass(c, b, { crystal: 0.8, crystalColor: G.MOHR_CRYSTAL_COLOR, t: 1 })],
-
-  ['比色管',           (c, b) => G.comparisonTube(c, b, { liquid: [203, 64, 69, 1], level: 0.62 })],
-  ['台秤',             (c, b) => G.balance(c, b, { item: true, itemColor: G.MOHR_CRYSTAL_COLOR, reading: '10.42', tone: 'good' })],
-  ['电热板',           (c, b) => G.hotplate(c, b, { heat: 0.8, steam: 0.4, t: 1 })],
-  ['玻璃棒',           (c, b) => G.stirringRod(c, b, { angle: 18 })],
-  ['气泡 + 晶体',      (c, b) => { G.bubbles(c, b, 1.5, 0.9);
-                                   G.crystals(c, { x: b.x + 10, y: b.y + 10, w: b.w - 20, h: b.h - 20 }, 1.5, 0.7, { color: G.MOHR_CRYSTAL_COLOR }); }],
-  ['量气管',            (c, b) => G.gasMeasuringTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.52 })],
-  ['滴定管',            (c, b) => G.burette(c, b, { liquid: [110, 200, 190, 0.42], level: 0.28 })],
-  ['容量瓶',            (c, b) => G.volumetricFlask(c, b, { liquid: [110, 200, 190, 0.32], level: 0.46 })],
-  ['移液管',            (c, b) => G.pipette(c, b, { angle: -0.10 })],
-  ['大试管',            (c, b) => G.testTube(c, b, { liquid: [150, 190, 215, 0.30], level: 0.42 })],
-  ['磁力搅拌器',        (c, b) => G.stirPlate(c, b)],
-  ['温度计',            (c, b) => G.thermometer(c, b)],
-  ['秒表',              (c, b) => G.stopwatch(c, b, { text: '82.0 s' })],
-  ['铁架台',            (c, b) => G.retortStand(c, b, { clamp: { x: b.x + b.w * 0.72, y: b.y + b.h * 0.34, radius: b.w * 0.25 } })],
-  ['导管',              (c, b) => G.tubing(c, [
-    [b.x + 8, b.y + b.h * 0.72], [b.x + b.w * 0.38, b.y + b.h * 0.72],
-    [b.x + b.w * 0.38, b.y + b.h * 0.30], [b.x + b.w - 8, b.y + b.h * 0.30],
-  ], { width: 6 })],
-
-  ['试剂瓶 细口',      (c, b) => G.reagentBottle(c, b, {
-    liquid: [222, 232, 240, 0.20], level: 0.62, label: ['EDTA 标液', '0.005 M'] })],
-  ['试剂瓶 广口棕',    (c, b) => G.reagentBottle(c, b, {
-    shape: 'wide', solid: [168, 62, 84, 0.78], level: 0.45,
-    label: ['钙指示剂'], labelTone: 'amber', cap: 'stopper', brown: true })],
-  ['滴瓶 铬黑T',       (c, b) => G.reagentBottle(c, b, {
-    shape: 'drop', liquid: [70, 60, 120, 0.55], level: 0.50, label: ['铬黑T'] })],
-  ['洗耳球 + 移液管',  (c, b) => {
-    G.washBulb(c, { x: b.x + 6, y: b.y + b.h * 0.30, w: 44, h: 53 }, { squeeze: 0.4 });
-    G.pipette(c, { x: b.x + 34, y: b.y + b.h * 0.26, w: b.w - 40, h: 26 }, { angle: Math.PI / 2 });
-  }],
-  ['絮状沉淀 Mg(OH)₂', (c, b) => {
-    G.conicalFlask(c, b, { liquid: [214, 220, 228, 0.30], level: 0.40 });
-    G.precipitateFlocs(c, { x: b.x + b.w * 0.22, y: b.y + b.h * 0.42, w: b.w * 0.56, h: b.h * 0.52 }, 1.5, 0.8);
-  }],
-  ['pH 计 整机', (c, b) => {
-    G.beaker(c, { x: b.x + 74, y: b.y + b.h - 92, w: 66, h: 92 }, { liquid: [214, 226, 238, 0.28], level: 0.52 });
-    G.phMeter(c, { x: b.x, y: b.y + 4, w: b.w, h: b.h - 8 }, { reading: '3.35', slopePct: 98.2, bulbY: b.y + b.h - 46 });
-  }],
-  ['分光光度计 整机', (c, b) => G.spectrophotometer(c,
-    { x: b.x, y: b.y + b.h * 0.24, w: b.w, h: b.h * 0.72 },
-    { wavelength: 480, reading: '0.430', cell: [214, 78, 92, 0.7] })],
-  ['比色皿 ×4（配对）', (c, b) => {
-    const y0 = b.y + b.h * 0.42;
-    for (let i = 0; i < 4; i++) {
-      G.cuvette(c, { x: b.x + 8 + i * 28, y: y0, w: 18, h: 62 },
-        { liquid: i === 0 ? [225, 232, 238, 0.2] : [214, 78, 92, 0.55] });
-    }
-  }],
-  ['蓝晒印相卡 成品', (c, b) => G.cyanotypePrint(c,
-    { x: b.x + 18, y: b.y + b.h * 0.34, w: b.w - 36, h: (b.w - 36) * 0.72 },
-    { state: 'washed', density: 0.96, oxidized: 1 })],
-  ['紫外曝光箱', (c, b) => G.uvExposureBox(c, { x: b.x, y: b.y + 12, w: b.w, h: b.h - 24 },
-    { on: true, seconds: 40 })],
-  ['显影盘（显影中）', (c, b) => G.developTray(c,
-    { x: b.x, y: b.y + b.h * 0.26, w: b.w, h: b.h * 0.52 },
-    { density: 0.9, oxidized: 0.4, t: 1.2 })],
-  ['离心机（开盖）', (c, b) => G.centrifuge(c, { x: b.x, y: b.y + b.h * 0.30, w: b.w, h: b.h * 0.62 },
-    { open: true, rpm: 3000, minutes: 5, spinning: true, t: 1.5 })],
-  ['离心管 ×3', (c, b) => {
-    for (let i = 0; i < 3; i++) {
-      G.centrifugeTube(c, { x: b.x + 10 + i * 34, y: b.y + b.h * 0.34, w: 24, h: 100 },
-        { liquid: [214, 226, 238, 0.3], level: 0.6, pellet: i === 1 ? 0.9 : 0, pelletColor: [236, 238, 240, 0.95] });
-    }
-  }],
-  ['试管架 ×4', (c, b) => G.testTubeRack(c, { x: b.x + 4, y: b.y + b.h * 0.28, w: b.w - 8, h: b.h * 0.56 }, {
-    tubes: [
-      { liquid: [20, 60, 150, 0.65], level: 0.5, label: '深蓝' },
-      { liquid: [235, 240, 244, 0.4], level: 0.5, solid: [240, 242, 244, 1], solidLevel: 0.8, label: 'AgCl' },
-      { liquid: [216, 220, 140, 0.55], level: 0.5, solid: [222, 208, 90, 1], solidLevel: 0.8, label: 'AgI' },
-      { dashed: true, label: '对照' },
-    ],
-  })],
-];
-
-const ROWS = Math.ceil(items.length / COLS);
-cv.width = COLS * CELL_W * dpr;
-cv.height = ROWS * CELL_H * dpr;
-cv.style.width = (COLS * CELL_W) + 'px';
-cv.style.height = (ROWS * CELL_H) + 'px';
+cv.width = canvasW * dpr;
+cv.height = canvasH * dpr;
+cv.style.width = canvasW + 'px';
+cv.style.height = canvasH + 'px';
 const ctx = cv.getContext('2d');
 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 ctx.fillStyle = '#0a0e12';
-ctx.fillRect(0, 0, COLS * CELL_W, ROWS * CELL_H);
-items.forEach(([name, fn], i) => {
-  const col = i % COLS, row = (i / COLS) | 0;
-  const ox = col * CELL_W, oy = row * CELL_H;
-  ctx.save();
-  ctx.translate(ox, oy);
-  // 格子边框
-  ctx.strokeStyle = 'rgba(160,180,196,0.12)';
-  ctx.strokeRect(0.5, 0.5, CELL_W - 1, CELL_H - 1);
-  ctx.font = '11px "PingFang SC", sans-serif';
-  ctx.fillStyle = '#7b8c99';
+ctx.fillRect(0, 0, canvasW, canvasH);
+
+const BG = [10, 14, 18];        // 页面底色 #0a0e12
+const CELL_BG = [17, 26, 32];   // 格子底色 #111a20 —— 非空判定拿它当参照
+const blanks = [];
+let y = PAD;
+
+for (const sec of SECTIONS) {
+  ctx.font = 'bold 12px "PingFang SC", sans-serif';
+  ctx.fillStyle = '#e8a33d';
   ctx.textAlign = 'left';
-  ctx.fillText(name, 7, 15);
-  // 器皿画在格子中下部
-  fn(ctx, { x: 40, y: 34, w: CELL_W - 80, h: CELL_H - 74 });
-  ctx.restore();
-});
+  ctx.fillText(sec.title, PAD, y + 14);
+  y += HEAD;
+
+  sec.items.forEach(([name, fn], i) => {
+    const col = i % sec.cols, row = (i / sec.cols) | 0;
+    const ox = PAD + col * (sec.cellW + GAP), oy = y + row * (sec.cellH + GAP);
+    const bx = ox + 6, by = oy + 20, bw = sec.cellW - 12, bh = sec.cellH - 26;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ox, oy, sec.cellW, sec.cellH);
+    ctx.clip();
+    ctx.fillStyle = '#111a20';
+    ctx.fillRect(ox, oy, sec.cellW, sec.cellH);
+
+    ctx.font = '11px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8798a5';
+    ctx.textAlign = 'left';
+    ctx.fillText(name, ox + 7, oy + 14);
+
+    let drew = true;
+    // 坐标系平移到格子左上角再调 fn。
+    // 少了这一步，复刻格（用 `cx = W/2`、`drawBench(H)` 这类**绝对坐标**）
+    // 会把内容画到画布左上角、压在别的格子上——踩过。
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.beginPath();
+    ctx.rect(0, 0, bw, bh);
+    ctx.clip();
+    try { fn(ctx, { x: 0, y: 0, w: bw, h: bh }, bw, bh); }
+    catch (e) { drew = false; console.error(`【复刻格抛错】${name}：`, e); }
+    ctx.restore();
+    ctx.restore();
+
+    // 非背景像素占比：每 4 像素抽 1 个。
+    //
+    // 这里踩过两次，都是「检查器自己在说谎」，记下来免得重犯：
+    //   ① 参照色必须是**格子自己的底色** #111a20，不能拿页面底色 #0a0e12——
+    //      两者差 33 > 阈值 10，于是每个像素都被算成「有内容」，空格子也报「无空白」。
+    //   ② 只能量**绘图区**（by..by+bh），不能量整格——格子标题那行字本身就有约 2% 的着色，
+    //      足以把一个什么都没画的格子顶过 0.4% 的阈值。
+    const d = ctx.getImageData(bx * dpr, by * dpr, bw * dpr, bh * dpr).data;
+    let ink = 0, seen = 0;
+    for (let p = 0; p < d.length; p += 4 * 4) {
+      seen++;
+      if (Math.abs(d[p] - CELL_BG[0]) + Math.abs(d[p + 1] - CELL_BG[1]) + Math.abs(d[p + 2] - CELL_BG[2]) > 10) ink++;
+    }
+    const ratio = seen ? ink / seen : 0;
+    const isBlank = !drew || ratio < 0.004;
+    if (isBlank) blanks.push(`${sec.title.slice(0, 6)}/${name}`);
+
+    ctx.save();
+    ctx.strokeStyle = isBlank ? '#e05a4f' : 'rgba(160,180,196,0.14)';
+    ctx.lineWidth = isBlank ? 2 : 1;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, sec.cellW - 1, sec.cellH - 1);
+    if (isBlank) {
+      ctx.font = 'bold 10px "PingFang SC", sans-serif';
+      ctx.fillStyle = '#e05a4f';
+      ctx.textAlign = 'right';
+      ctx.fillText(`空白 ${(ratio * 100).toFixed(2)}%`, ox + sec.cellW - 7, oy + 14);
+    }
+    ctx.restore();
+  });
+  y += Math.ceil(sec.items.length / sec.cols) * (sec.cellH + GAP) + GAP;
+}
+
+const total = SECTIONS.reduce((n, s) => n + s.items.length, 0);
+document.getElementById('stat').innerHTML = `共 <b>${total}</b> 格 · `
+  + (blanks.length ? `空白 <span class="bad">${blanks.length}</span>` : '<b>无空白格</b>');
+window.__blanks = blanks;
+console.log(`_glassware-test：${total} 格，空白 ${blanks.length} 个`, blanks);
 </script>
 </body>
 </html>

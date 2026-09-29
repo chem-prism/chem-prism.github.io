@@ -5,13 +5,14 @@
  * 与最终读数的关系连起来。课件范例中的比值按表内数据重算为 0.9976。
  */
 import { titrationOperation } from '../chem.js';
-import { h } from './common.js';
+import { h, noteAt, pourStream } from './common.js';
 import { mountLab } from './lab-shell.js';
 import {
   burette, conicalFlask, pipette, volumetricFlask, balance,
-  testTube, tubing, CLEAR_COLOR,
-  drawBench,
-} from '../glassware.js';
+  testTube, tubing, CLEAR_COLOR, beaker, washBulb, reagentBottle,
+  drawBench } from '../glassware.js';
+
+const C_NAOH = [110, 200, 190, 0.42];   // 0.1000 mol·L⁻¹ NaOH 近无色，给一点色相便于分辨
 
 export const meta = {
   id: 'titration-practice',
@@ -73,9 +74,63 @@ function draw(ctx, W, H, t, i, r) {
     volumetricFlask(ctx, { x: cx + 35, y: B - 210, w: 90, h: 210 }, { liquid: CLEAR_COLOR, level: 0.42 });
     return;
   }
-  if (i === 1 || i === 2) {
-    pipette(ctx, { x: cx - 18, y: H * 0.15, w: 230, h: 35 }, { angle: Math.PI / 2 });
-    conicalFlask(ctx, { x: cx + 30, y: B - 155, w: 100, h: 155 }, { liquid: [225, 232, 238, 0.24], level: 0.25 });
+  if (i === 1) {
+    /* 移液管洗涤润洗：管尖浸在待吸液里，管壁挂着一层液膜。
+       这一格与下一步（定量移取）原本画得一模一样，看不出是两件事。 */
+    const bk = { x: cx - 200, y: B - 132, w: 112, h: 132 };
+    beaker(ctx, bk, { liquid: C_NAOH, level: 0.55 });
+    const liquidY = bk.y + bk.h * (1 - 0.55);        // 液面高度，管尖要**浸到它下面**
+    const pp = { x: cx - 230, y: 175, w: 168, h: 20 };
+    const ang = -0.90;                                // 取负，左端（管尖）才朝下
+    pipette(ctx, pp, { angle: ang });
+    // 用与 pipette() 同一套「绕框心旋转」的公式算出管轴两端，液膜点就永远贴在管身上
+    const pc = { x: pp.x + pp.w / 2, y: pp.y + pp.h / 2 };
+    const along = k => ({ x: pc.x + k * Math.cos(ang), y: pc.y + k * Math.sin(ang) });
+    const tip = along(-pp.w * 0.38), top = along(pp.w * 0.47);
+    // 屏幕坐标 y 越大越低：管尖必须**大于**液面 y 才算浸进去
+    if (tip.y < liquidY + 6) {
+      console.warn(`titration-practice 第2步：管尖 y=${tip.y.toFixed(0)} 没浸到液面 y=${liquidY.toFixed(0)} 以下`);
+    }
+    // 管内液膜随 t 沿管轴下滑——润洗这个动作本身就是液体在管内壁上走一遍
+    const slide = (t * 0.17) % 1;
+    ctx.save();
+    for (let k = 0; k < 4; k++) {
+      const u = (slide + k / 4) % 1;                  // 0 在管尖端、1 在管顶端
+      const px = tip.x + (top.x - tip.x) * u;
+      const py = tip.y + (top.y - tip.y) * u;
+      ctx.beginPath();
+      ctx.arc(px, py, 4.0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(110,200,190,${0.75 * (0.35 + 0.65 * u)})`;
+      ctx.fill();
+    }
+    ctx.restore();
+    noteAt(ctx, cx + 30, 70, '润洗 2～3 次', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx + 30, 88, '管壁残留水会稀释待测液', 'rgba(160,180,196,0.6)');
+    return;
+  }
+  if (i === 2) {
+    /* 定量移取：课件第 3 步原文「用洗耳球吸取 25.00 mL NaOH，垂直转移至锥形瓶」。
+       洗耳球是本步的核心器具（正文提 4 次、课件装置图上有），此前代码里一次都没画。 */
+    reagentBottle(ctx, { x: cx - 232, y: B - 148, w: 56, h: 148 },
+      { liquid: C_NAOH, level: 0.62, label: ['NaOH'] });
+    const flask = { x: cx + 8, y: B - 130, w: 100, h: 130 };
+    const f = conicalFlask(ctx, flask, { liquid: [225, 232, 238, 0.24], level: 0.22 });
+    const mx = f.mouth.x;
+    // 竖直放置：angle = -π/2 时管尖（局部 -0.38w 那端）朝下、胖肚（+0.28~0.47w）朝上
+    pipette(ctx, { x: mx - 70, y: 111, w: 140, h: 22 }, { angle: -Math.PI / 2 });
+    // 管中已吸起的液柱
+    ctx.save();
+    ctx.strokeStyle = 'rgba(110,200,190,0.85)';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(mx, 92); ctx.lineTo(mx, 168); ctx.stroke();
+    ctx.restore();
+    // 洗耳球套在管顶，捏动幅度随 t 起伏——这是本步唯一该动的地方
+    washBulb(ctx, { x: mx - 22, y: 4, w: 44, h: 56 },
+      { squeeze: 0.42 + 0.24 * Math.sin(t * 1.7) });
+    noteAt(ctx, cx - 232, 74, '洗耳球吸取 25.00 mL', 'rgba(160,180,196,0.9)');
+    noteAt(ctx, cx - 232, 92, '绝不能用嘴吸', 'rgba(224,90,79,0.85)');
     return;
   }
   const buretteBox = { x: cx - 35, y: H * 0.04, w: 58, h: H * 0.42 };
@@ -84,13 +139,9 @@ function draw(ctx, W, H, t, i, r) {
   });
   const flask = { x: cx - 20, y: B - 140, w: 110, h: 140 };
   conicalFlask(ctx, flask, { liquid: i >= 6 ? [214, 102, 160, 0.38] : CLEAR_COLOR, level: 0.30 });
-  ctx.strokeStyle = 'rgba(110,200,190,0.78)';
-  ctx.lineWidth = 2;
   const mouthX = flask.x + flask.w / 2;
-  ctx.beginPath();
-  ctx.moveTo(mouthX, buretteBox.y + buretteBox.h);
-  ctx.lineTo(mouthX, flask.y + 8);
-  ctx.stroke();
+  pourStream(ctx, { x: mouthX, y: buretteBox.y + buretteBox.h }, { x: mouthX, y: flask.y + 8 },
+    { color: [110, 200, 190], alpha: 0.72, width: 3, t });
   if (i === 5) {
     ctx.fillStyle = '#e8a33d'; ctx.font = '600 13px ui-monospace, Menlo, monospace';
     ctx.textAlign = 'center'; ctx.fillText('半滴 + 冲洗瓶壁', cx + 100, H * 0.22);
@@ -166,3 +217,10 @@ export function mount(root, params = {}) {
     readings, modelNote: '说明：0.1000 mol·L⁻¹ 强酸强碱理论等当体积为 25.00 mL；操作错误通过方向性读数模型体现，最终应以规范平行测定为准。',
   });
 }
+
+/**
+ * 供自检页（`_scenes-all.html` / `_scenes-test.html`）读取的最小场景描述。
+ * 有了它，自检页就不必**手抄**步骤名——sim 里改一步，自检页跟着变。
+ * 引用的全是模块级标识符，不会与 mount 里那份漂移。
+ */
+export const sceneSpec = { id: meta.id, name: meta.name, steps: STEPS, guide: GUIDE, model, draw };
